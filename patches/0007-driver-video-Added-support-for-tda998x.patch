@@ -1,0 +1,1174 @@
+From ae3061e5493a6dd7ca0b337661b0f806ac12250c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 6 Nov 2013 18:44:15 +0100
+Subject: [PATCH 07/16] driver/video Added support for tda998x
+
+Backported driver from 3.11.
+Removed drm framework to make it work under 3.2.
+
+Signed-off-by: Johann Fischer <j.fischer@phytec.de>
+---
+ drivers/video/Kconfig       |    6 +
+ drivers/video/Makefile      |    1 +
+ drivers/video/da8xx-fb.c    |   26 ++
+ drivers/video/tda998x_drv.c | 1082 +++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 1115 insertions(+)
+ create mode 100644 drivers/video/tda998x_drv.c
+
+diff --git a/drivers/video/Kconfig b/drivers/video/Kconfig
+index d770174..1481969 100644
+--- a/drivers/video/Kconfig
++++ b/drivers/video/Kconfig
+@@ -2420,6 +2420,12 @@ config FB_PUV3_UNIGFX
+ 	  Choose this option if you want to use the Unigfx device as a
+ 	  framebuffer device. Without the support of PCI & AGP.
+ 
++config TDA19988
++	tristate "tda19988 nxp hdmi encoder"
++	help
++	  Choose this option if you have a fish.
++	  If M is selected the module will be called savage.
++
+ source "drivers/video/omap/Kconfig"
+ source "drivers/video/omap2/Kconfig"
+ 
+diff --git a/drivers/video/Makefile b/drivers/video/Makefile
+index 9b9d8ff..ac363bc 100644
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -158,6 +158,7 @@ obj-$(CONFIG_FB_BFIN_7393)        += bfin_adv7393fb.o
+ obj-$(CONFIG_FB_MX3)		  += mx3fb.o
+ obj-$(CONFIG_FB_DA8XX)		  += da8xx-fb.o
+ obj-$(CONFIG_FB_MXS)		  += mxsfb.o
++obj-$(CONFIG_TDA19988)		  += tda998x_drv.o
+ 
+ # the test framebuffer is last
+ obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
+diff --git a/drivers/video/da8xx-fb.c b/drivers/video/da8xx-fb.c
+index 078272a..628e214 100644
+--- a/drivers/video/da8xx-fb.c
++++ b/drivers/video/da8xx-fb.c
+@@ -361,6 +361,32 @@ static struct da8xx_panel known_lcd_panels[] = {
+ 		.pxl_clk = 40000000,
+ 		.invert_pxl_clk = 1,
+ 	},
++	[8] = {
++		.name = "DVI_XGA",
++		.width = 1024,
++		.height = 768,
++		.hfp = 220,
++		.hbp = 110,
++		.hsw = 40,
++		.vfp = 29,
++		.vbp = 3,
++		.vsw = 6,
++		.pxl_clk = 75000000,
++		.invert_pxl_clk = 1,
++	},
++	[9] = {
++		.name = "DVI_720P",
++		.width = 1280,
++		.height = 720,
++		.hfp = 220,
++		.hbp = 110,
++		.hsw = 40,
++		.vfp = 20,
++		.vbp = 5,
++		.vsw = 5,
++		.pxl_clk = 75000000,
++		.invert_pxl_clk = 1,
++	},
+ };
+ 
+ /* Enable the Raster Engine of the LCD Controller */
+diff --git a/drivers/video/tda998x_drv.c b/drivers/video/tda998x_drv.c
+new file mode 100644
+index 0000000..27dd213
+--- /dev/null
++++ b/drivers/video/tda998x_drv.c
+@@ -0,0 +1,1082 @@
++/*
++ * Author: Phytec GmbH
++ * Copyright (C) 2013 Phytec GmbH
++ *
++ * based on: tda998x_drv.c (drm driver)
++ * Copyright (C) 2012 Texas Instruments
++ * Author: Rob Clark <robdclark@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 as published by
++ * the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <linux/module.h>
++#include <linux/i2c.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/fs.h>
++
++/* The TDA9988 series of devices use a paged register scheme.. to simplify
++ * things we encode the page # in upper bits of the register #.  To read/
++ * write a given register, we need to make sure CURPAGE register is set
++ * appropriately.  Which implies reads/writes are not atomic.  Fun!
++ */
++
++#define REG(page, addr) (((page) << 8) | (addr))
++#define REG2ADDR(reg)   ((reg) & 0xff)
++#define REG2PAGE(reg)   (((reg) >> 8) & 0xff)
++
++#define REG_CURPAGE               0xff                /* write */
++
++
++/* Page 00h: General Control */
++#define REG_VERSION_LSB           REG(0x00, 0x00)     /* read */
++#define REG_MAIN_CNTRL0           REG(0x00, 0x01)     /* read/write */
++# define MAIN_CNTRL0_SR           (1 << 0)
++# define MAIN_CNTRL0_DECS         (1 << 1)
++# define MAIN_CNTRL0_DEHS         (1 << 2)
++# define MAIN_CNTRL0_CECS         (1 << 3)
++# define MAIN_CNTRL0_CEHS         (1 << 4)
++# define MAIN_CNTRL0_SCALER       (1 << 7)
++#define REG_VERSION_MSB           REG(0x00, 0x02)     /* read */
++#define REG_SOFTRESET             REG(0x00, 0x0a)     /* write */
++# define SOFTRESET_AUDIO          (1 << 0)
++# define SOFTRESET_I2C_MASTER     (1 << 1)
++#define REG_DDC_DISABLE           REG(0x00, 0x0b)     /* read/write */
++#define REG_CCLK_ON               REG(0x00, 0x0c)     /* read/write */
++#define REG_I2C_MASTER            REG(0x00, 0x0d)     /* read/write */
++# define I2C_MASTER_DIS_MM        (1 << 0)
++# define I2C_MASTER_DIS_FILT      (1 << 1)
++# define I2C_MASTER_APP_STRT_LAT  (1 << 2)
++#define REG_INT_FLAGS_0           REG(0x00, 0x0f)     /* read/write */
++#define REG_INT_FLAGS_1           REG(0x00, 0x10)     /* read/write */
++#define REG_INT_FLAGS_2           REG(0x00, 0x11)     /* read/write */
++# define INT_FLAGS_2_EDID_BLK_RD  (1 << 1)
++#define REG_ENA_VP_0              REG(0x00, 0x18)     /* read/write */
++#define REG_ENA_VP_1              REG(0x00, 0x19)     /* read/write */
++#define REG_ENA_VP_2              REG(0x00, 0x1a)     /* read/write */
++#define REG_ENA_AP                REG(0x00, 0x1e)     /* read/write */
++#define REG_VIP_CNTRL_0           REG(0x00, 0x20)     /* write */
++# define VIP_CNTRL_0_MIRR_A       (1 << 7)
++# define VIP_CNTRL_0_SWAP_A(x)    (((x) & 7) << 4)
++# define VIP_CNTRL_0_MIRR_B       (1 << 3)
++# define VIP_CNTRL_0_SWAP_B(x)    (((x) & 7) << 0)
++#define REG_VIP_CNTRL_1           REG(0x00, 0x21)     /* write */
++# define VIP_CNTRL_1_MIRR_C       (1 << 7)
++# define VIP_CNTRL_1_SWAP_C(x)    (((x) & 7) << 4)
++# define VIP_CNTRL_1_MIRR_D       (1 << 3)
++# define VIP_CNTRL_1_SWAP_D(x)    (((x) & 7) << 0)
++#define REG_VIP_CNTRL_2           REG(0x00, 0x22)     /* write */
++# define VIP_CNTRL_2_MIRR_E       (1 << 7)
++# define VIP_CNTRL_2_SWAP_E(x)    (((x) & 7) << 4)
++# define VIP_CNTRL_2_MIRR_F       (1 << 3)
++# define VIP_CNTRL_2_SWAP_F(x)    (((x) & 7) << 0)
++#define REG_VIP_CNTRL_3           REG(0x00, 0x23)     /* write */
++# define VIP_CNTRL_3_X_TGL        (1 << 0)
++# define VIP_CNTRL_3_H_TGL        (1 << 1)
++# define VIP_CNTRL_3_V_TGL        (1 << 2)
++# define VIP_CNTRL_3_EMB          (1 << 3)
++# define VIP_CNTRL_3_SYNC_DE      (1 << 4)
++# define VIP_CNTRL_3_SYNC_HS      (1 << 5)
++# define VIP_CNTRL_3_DE_INT       (1 << 6)
++# define VIP_CNTRL_3_EDGE         (1 << 7)
++#define REG_VIP_CNTRL_4           REG(0x00, 0x24)     /* write */
++# define VIP_CNTRL_4_BLC(x)       (((x) & 3) << 0)
++# define VIP_CNTRL_4_BLANKIT(x)   (((x) & 3) << 2)
++# define VIP_CNTRL_4_CCIR656      (1 << 4)
++# define VIP_CNTRL_4_656_ALT      (1 << 5)
++# define VIP_CNTRL_4_TST_656      (1 << 6)
++# define VIP_CNTRL_4_TST_PAT      (1 << 7)
++#define REG_VIP_CNTRL_5           REG(0x00, 0x25)     /* write */
++# define VIP_CNTRL_5_CKCASE       (1 << 0)
++# define VIP_CNTRL_5_SP_CNT(x)    (((x) & 3) << 1)
++#define REG_MUX_AP		REG(0x00, 0x26)     /* write */
++#define REG_MUX_VP_VIP_OUT	REG(0x00, 0x27)     /* write */
++#define REG_MAT_CONTRL            REG(0x00, 0x80)     /* write */
++# define MAT_CONTRL_MAT_SC(x)     (((x) & 3) << 0)
++# define MAT_CONTRL_MAT_BP        (1 << 2)
++#define REG_VIDFORMAT             REG(0x00, 0xa0)     /* write */
++#define REG_REFPIX_MSB            REG(0x00, 0xa1)     /* write */
++#define REG_REFPIX_LSB            REG(0x00, 0xa2)     /* write */
++#define REG_REFLINE_MSB           REG(0x00, 0xa3)     /* write */
++#define REG_REFLINE_LSB           REG(0x00, 0xa4)     /* write */
++#define REG_NPIX_MSB              REG(0x00, 0xa5)     /* write */
++#define REG_NPIX_LSB              REG(0x00, 0xa6)     /* write */
++#define REG_NLINE_MSB             REG(0x00, 0xa7)     /* write */
++#define REG_NLINE_LSB             REG(0x00, 0xa8)     /* write */
++#define REG_VS_LINE_STRT_1_MSB    REG(0x00, 0xa9)     /* write */
++#define REG_VS_LINE_STRT_1_LSB    REG(0x00, 0xaa)     /* write */
++#define REG_VS_PIX_STRT_1_MSB     REG(0x00, 0xab)     /* write */
++#define REG_VS_PIX_STRT_1_LSB     REG(0x00, 0xac)     /* write */
++#define REG_VS_LINE_END_1_MSB     REG(0x00, 0xad)     /* write */
++#define REG_VS_LINE_END_1_LSB     REG(0x00, 0xae)     /* write */
++#define REG_VS_PIX_END_1_MSB      REG(0x00, 0xaf)     /* write */
++#define REG_VS_PIX_END_1_LSB      REG(0x00, 0xb0)     /* write */
++#define REG_VS_LINE_STRT_2_MSB    REG(0x00, 0xb1)     /* write */
++#define REG_VS_LINE_STRT_2_LSB    REG(0x00, 0xb2)     /* write */
++#define REG_VS_PIX_STRT_2_MSB     REG(0x00, 0xb3)     /* write */
++#define REG_VS_PIX_STRT_2_LSB     REG(0x00, 0xb4)     /* write */
++#define REG_VS_LINE_END_2_MSB     REG(0x00, 0xb5)     /* write */
++#define REG_VS_LINE_END_2_LSB     REG(0x00, 0xb6)     /* write */
++#define REG_VS_PIX_END_2_MSB      REG(0x00, 0xb7)     /* write */
++#define REG_VS_PIX_END_2_LSB      REG(0x00, 0xb8)     /* write */
++#define REG_HS_PIX_START_MSB      REG(0x00, 0xb9)     /* write */
++#define REG_HS_PIX_START_LSB      REG(0x00, 0xba)     /* write */
++#define REG_HS_PIX_STOP_MSB       REG(0x00, 0xbb)     /* write */
++#define REG_HS_PIX_STOP_LSB       REG(0x00, 0xbc)     /* write */
++#define REG_VWIN_START_1_MSB      REG(0x00, 0xbd)     /* write */
++#define REG_VWIN_START_1_LSB      REG(0x00, 0xbe)     /* write */
++#define REG_VWIN_END_1_MSB        REG(0x00, 0xbf)     /* write */
++#define REG_VWIN_END_1_LSB        REG(0x00, 0xc0)     /* write */
++#define REG_VWIN_START_2_MSB      REG(0x00, 0xc1)     /* write */
++#define REG_VWIN_START_2_LSB      REG(0x00, 0xc2)     /* write */
++#define REG_VWIN_END_2_MSB        REG(0x00, 0xc3)     /* write */
++#define REG_VWIN_END_2_LSB        REG(0x00, 0xc4)     /* write */
++#define REG_DE_START_MSB          REG(0x00, 0xc5)     /* write */
++#define REG_DE_START_LSB          REG(0x00, 0xc6)     /* write */
++#define REG_DE_STOP_MSB           REG(0x00, 0xc7)     /* write */
++#define REG_DE_STOP_LSB           REG(0x00, 0xc8)     /* write */
++#define REG_TBG_CNTRL_0           REG(0x00, 0xca)     /* write */
++# define TBG_CNTRL_0_DE_EXT	(1 << 2)
++# define TBG_CNTRL_0_FRAME_DIS    (1 << 5)
++# define TBG_CNTRL_0_SYNC_MTHD    (1 << 6)
++# define TBG_CNTRL_0_SYNC_ONCE    (1 << 7)
++#define REG_TBG_CNTRL_1           REG(0x00, 0xcb)     /* write */
++# define TBG_CNTRL_1_H_TGL        (1 << 0)
++# define TBG_CNTRL_1_V_TGL        (1 << 1)
++# define TBG_CNTRL_1_TGL_EN       (1 << 2)
++# define TBG_CNTRL_1_X_EXT        (1 << 3)
++# define TBG_CNTRL_1_H_EXT        (1 << 4)
++# define TBG_CNTRL_1_V_EXT        (1 << 5)
++# define TBG_CNTRL_1_DWIN_DIS     (1 << 6)
++#define REG_ENABLE_SPACE          REG(0x00, 0xd6)     /* write */
++#define REG_HVF_CNTRL_0           REG(0x00, 0xe4)     /* write */
++# define HVF_CNTRL_0_SM           (1 << 7)
++# define HVF_CNTRL_0_RWB          (1 << 6)
++# define HVF_CNTRL_0_PREFIL(x)    (((x) & 3) << 2)
++# define HVF_CNTRL_0_INTPOL(x)    (((x) & 3) << 0)
++#define REG_HVF_CNTRL_1           REG(0x00, 0xe5)     /* write */
++# define HVF_CNTRL_1_FOR          (1 << 0)
++# define HVF_CNTRL_1_YUVBLK       (1 << 1)
++# define HVF_CNTRL_1_VQR(x)       (((x) & 3) << 2)
++# define HVF_CNTRL_1_PAD(x)       (((x) & 3) << 4)
++# define HVF_CNTRL_1_SEMI_PLANAR  (1 << 6)
++#define REG_RPT_CNTRL             REG(0x00, 0xf0)     /* write */
++
++
++/* Page 02h: PLL settings */
++#define REG_PLL_SERIAL_1          REG(0x02, 0x00)     /* read/write */
++# define PLL_SERIAL_1_SRL_FDN     (1 << 0)
++# define PLL_SERIAL_1_SRL_IZ(x)   (((x) & 3) << 1)
++# define PLL_SERIAL_1_SRL_MAN_IZ  (1 << 6)
++#define REG_PLL_SERIAL_2          REG(0x02, 0x01)     /* read/write */
++# define PLL_SERIAL_2_SRL_NOSC(x) (((x) & 3) << 0)
++# define PLL_SERIAL_2_SRL_PR(x)   (((x) & 0xf) << 4)
++#define REG_PLL_SERIAL_3          REG(0x02, 0x02)     /* read/write */
++# define PLL_SERIAL_3_SRL_CCIR    (1 << 0)
++# define PLL_SERIAL_3_SRL_DE      (1 << 2)
++# define PLL_SERIAL_3_SRL_PXIN_SEL (1 << 4)
++#define REG_SERIALIZER            REG(0x02, 0x03)     /* read/write */
++#define REG_BUFFER_OUT            REG(0x02, 0x04)     /* read/write */
++#define REG_PLL_SCG1              REG(0x02, 0x05)     /* read/write */
++#define REG_PLL_SCG2              REG(0x02, 0x06)     /* read/write */
++#define REG_PLL_SCGN1             REG(0x02, 0x07)     /* read/write */
++#define REG_PLL_SCGN2             REG(0x02, 0x08)     /* read/write */
++#define REG_PLL_SCGR1             REG(0x02, 0x09)     /* read/write */
++#define REG_PLL_SCGR2             REG(0x02, 0x0a)     /* read/write */
++#define REG_PLL_DE		REG(0x02, 0x0b)     /* read/write */
++#define BYPASS_PLL_DE		(1 << 7)
++#define PLL_DE_NOSC(x)		(((x) & 3) << 4)
++#define PLL_FDN			(1 << 0)
++#define REG_AUDIO_DIV             REG(0x02, 0x0e)     /* read/write */
++#define REG_VAI_PLL		REG(0x02, 0x0d)     /* read */
++#define REG_SEL_CLK               REG(0x02, 0x11)     /* read/write */
++# define SEL_CLK_SEL_CLK1         (1 << 0)
++# define SEL_CLK_SEL_VRF_CLK(x)   (((x) & 3) << 1)
++# define SEL_CLK_ENA_SC_CLK       (1 << 3)
++#define REG_ANA_GENERAL           REG(0x02, 0x12)     /* read/write */
++
++
++/* Page 09h: EDID Control */
++#define REG_EDID_DATA_0           REG(0x09, 0x00)     /* read */
++/* next 127 successive registers are the EDID block */
++#define REG_EDID_CTRL             REG(0x09, 0xfa)     /* read/write */
++#define REG_DDC_ADDR              REG(0x09, 0xfb)     /* read/write */
++#define REG_DDC_OFFS              REG(0x09, 0xfc)     /* read/write */
++#define REG_DDC_SEGM_ADDR         REG(0x09, 0xfd)     /* read/write */
++#define REG_DDC_SEGM              REG(0x09, 0xfe)     /* read/write */
++
++
++/* Page 10h: information frames and packets */
++
++
++/* Page 11h: audio settings and content info packets */
++#define REG_AIP_CNTRL_0           REG(0x11, 0x00)     /* read/write */
++# define AIP_CNTRL_0_RST_FIFO     (1 << 0)
++# define AIP_CNTRL_0_SWAP         (1 << 1)
++# define AIP_CNTRL_0_LAYOUT       (1 << 2)
++# define AIP_CNTRL_0_ACR_MAN      (1 << 5)
++# define AIP_CNTRL_0_RST_CTS      (1 << 6)
++#define REG_ENC_CNTRL             REG(0x11, 0x0d)     /* read/write */
++# define ENC_CNTRL_RST_ENC        (1 << 0)
++# define ENC_CNTRL_RST_SEL        (1 << 1)
++# define ENC_CNTRL_CTL_CODE(x)    (((x) & 3) << 2)
++#define REG_DIP_FLAGS             REG(0x11, 0x0e)     /* read/write */
++# define DIP_FLAGS_FORCE_NULL	(1 << 7)
++
++
++/* Page 12h: HDCP and OTP */
++#define REG_TX3                   REG(0x12, 0x9a)     /* read/write */
++#define REG_TX33                  REG(0x12, 0xb8)     /* read/write */
++# define TX33_HDMI                (1 << 1)
++
++
++/* Page 13h: Gamut related metadata packets */
++
++
++
++/* CEC registers: (not paged)
++ */
++#define REG_CEC_FRO_IM_CLK_CTRL   0xfb                /* read/write */
++# define CEC_FRO_IM_CLK_CTRL_GHOST_DIS (1 << 7)
++# define CEC_FRO_IM_CLK_CTRL_ENA_OTP   (1 << 6)
++# define CEC_FRO_IM_CLK_CTRL_IMCLK_SEL (1 << 1)
++# define CEC_FRO_IM_CLK_CTRL_FRO_DIV   (1 << 0)
++#define REG_CEC_RXSHPDLEV         0xfe                /* read */
++# define CEC_RXSHPDLEV_RXSENS     (1 << 0)
++# define CEC_RXSHPDLEV_HPD        (1 << 1)
++
++#define REG_CEC_ENAMODS           0xff                /* read/write */
++# define CEC_ENAMODS_DIS_FRO      (1 << 6)
++# define CEC_ENAMODS_DIS_CCLK     (1 << 5)
++# define CEC_ENAMODS_EN_RXSENS    (1 << 2)
++# define CEC_ENAMODS_EN_HDMI      (1 << 1)
++# define CEC_ENAMODS_EN_CEC       (1 << 0)
++
++
++/* Device versions: */
++#define TDA9989N2                 0x0101
++#define TDA19989                  0x0201
++#define TDA19989N2                0x0202
++#define TDA19988                  0x0301
++
++#define HA_720P		1280
++#define HFP_720P	220
++#define HSPW_720P	43
++#define HBP_720P	110
++#define VA_720P		720
++#define VFP_720P	5
++#define VSPW_720P	5
++#define VBP_720P	20
++
++/*
++#define HA_VGA		640
++#define HFP_VGA		46
++#define HSPW_VGA	96
++#define HBP_VGA		18
++#define VA_VGA		480
++#define VFP_VGA		33
++#define VSPW_VGA	2
++#define VBP_VGA		10
++*/
++
++struct tda998x_encoder {
++	struct i2c_client *cec;
++	struct i2c_client *hdmi;
++	uint16_t rev;
++	uint8_t current_page;
++	uint16_t h_active;
++	uint16_t h_fporch;
++	uint16_t h_syncpw;
++	uint16_t h_bporch;
++	uint16_t v_active;
++	uint16_t v_fporch;
++	uint16_t v_syncpw;
++	uint16_t v_bporch;
++	uint16_t ref_line;
++	uint16_t ref_pix;
++	int smode;
++};
++
++static void tda998x_mode_set(struct tda998x_encoder *encoder);
++
++static ssize_t show_ref_pix(struct device *dev, struct device_attribute *attr,
++			char *buf)
++{
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->ref_pix);
++}
++
++static ssize_t store_ref_pix(struct device *dev, struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	int value;
++	int retval;
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	retval = kstrtoint(buf, 0, &value);
++	if (retval)
++		return retval;
++	encoder->ref_pix = value;
++	tda998x_mode_set(encoder);
++	return count;
++}
++
++static ssize_t show_ref_line(struct device *dev, struct device_attribute *attr,
++			char *buf)
++{
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->ref_line);
++}
++
++static ssize_t store_ref_line(struct device *dev, struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	int value;
++	int retval;
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	retval = kstrtoint(buf, 0, &value);
++	if (retval)
++		return retval;
++	encoder->ref_line = value;
++	tda998x_mode_set(encoder);
++	return count;
++}
++
++static ssize_t show_smode(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->smode);
++}
++
++static ssize_t store_smode(struct device *dev, struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	int value;
++	int retval;
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++
++	retval = kstrtoint(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->smode = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_h_active(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->h_active);
++}
++
++static ssize_t store_h_active(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->h_active = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_v_active(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->v_active);
++}
++
++static ssize_t store_v_active(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->v_active = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_h_fporch(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->h_fporch);
++}
++
++static ssize_t store_h_fporch(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->h_fporch = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_v_fporch(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->v_fporch);
++}
++
++static ssize_t store_v_fporch(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->v_fporch = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_h_bporch(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->h_bporch);
++}
++
++static ssize_t store_h_bporch(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->h_bporch = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_v_bporch(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->v_bporch);
++}
++
++static ssize_t store_v_bporch(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->v_bporch = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_h_syncpw(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder = dev_get_drvdata(dev);
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->h_syncpw);
++}
++
++static ssize_t store_h_syncpw(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++	encoder->h_syncpw = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static ssize_t show_v_syncpw(struct device *dev, struct device_attribute *attr,
++		char *buf)
++{
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	return scnprintf(buf, PAGE_SIZE, "%d\n", encoder->v_syncpw);
++}
++
++static ssize_t store_v_syncpw(struct device *dev, struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	uint16_t value;
++	int retval;
++	struct tda998x_encoder *encoder;
++
++	encoder = dev_get_drvdata(dev);
++
++	retval = kstrtou16(buf, 0, &value);
++	if (retval)
++		return retval;
++
++	encoder->v_syncpw = value;
++	tda998x_mode_set(encoder);
++
++	return count;
++}
++
++static struct device_attribute tda19988_attrs[] = {
++	__ATTR(smode, S_IRUGO | S_IWUSR, show_smode, store_smode),
++	__ATTR(ref_pix, S_IRUGO | S_IWUSR, show_ref_pix, store_ref_pix),
++	__ATTR(ref_line, S_IRUGO | S_IWUSR, show_ref_line, store_ref_line),
++	__ATTR(h_active, S_IRUGO | S_IWUSR, show_h_active, store_h_active),
++	__ATTR(v_active, S_IRUGO | S_IWUSR, show_v_active, store_v_active),
++	__ATTR(h_fporch, S_IRUGO | S_IWUSR, show_h_fporch, store_h_fporch),
++	__ATTR(v_fporch, S_IRUGO | S_IWUSR, show_v_fporch, store_v_fporch),
++	__ATTR(h_bporch, S_IRUGO | S_IWUSR, show_h_bporch, store_h_bporch),
++	__ATTR(v_bporch, S_IRUGO | S_IWUSR, show_v_bporch, store_v_bporch),
++	__ATTR(h_syncpw, S_IRUGO | S_IWUSR, show_h_syncpw, store_h_syncpw),
++	__ATTR(v_syncpw, S_IRUGO | S_IWUSR, show_v_syncpw, store_v_syncpw),
++};
++
++int tda19988_create_sysfs(struct tda998x_encoder *encoder)
++{
++	int ret;
++	int t;
++	struct i2c_client *client = encoder->cec;
++
++	for (t = 0; t < ARRAY_SIZE(tda19988_attrs); t++) {
++		ret = device_create_file(&client->dev, &tda19988_attrs[t]);
++
++		if (ret) {
++			dev_err(&client->dev, "failed to create sysfs "
++					"file\n");
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++void tda19988_remove_sysfs(struct tda998x_encoder *encoder)
++{
++	int t;
++	struct i2c_client *client = encoder->cec;
++
++	for (t = 0; t < ARRAY_SIZE(tda19988_attrs); t++)
++		device_remove_file(&client->dev, &tda19988_attrs[t]);
++}
++
++
++static void
++cec_write(struct tda998x_encoder *encoder, uint16_t addr, uint8_t val)
++{
++	struct i2c_client *client = encoder->cec;
++	uint8_t buf[] = {addr, val};
++	int ret;
++
++	ret = i2c_master_send(client, buf, ARRAY_SIZE(buf));
++	if (ret < 0)
++		dev_err(&client->dev, "Error %d writing to cec:0x%x\n",
++			ret, addr);
++}
++
++static uint8_t
++cec_read(struct tda998x_encoder *encoder, uint8_t addr)
++{
++	struct i2c_client *client = encoder->cec;
++	uint8_t val;
++	int ret;
++
++	ret = i2c_master_send(client, &addr, sizeof(addr));
++	if (ret < 0)
++		goto fail;
++
++	ret = i2c_master_recv(client, &val, sizeof(val));
++	if (ret < 0)
++		goto fail;
++
++	return val;
++
++fail:
++	dev_err(&client->dev, "Error %d reading from cec:0x%x\n", ret, addr);
++	return 0;
++}
++
++static void
++set_page(struct tda998x_encoder *encoder, uint16_t reg)
++{
++	if (REG2PAGE(reg) != encoder->current_page) {
++		struct i2c_client *client = encoder->hdmi;
++		uint8_t buf[] = {
++				REG_CURPAGE, REG2PAGE(reg)
++		};
++		int ret = i2c_master_send(client, buf, sizeof(buf));
++		if (ret < 0)
++			dev_err(&client->dev,
++				"Error %d writing to REG_CURPAGE\n", ret);
++
++		encoder->current_page = REG2PAGE(reg);
++	}
++}
++
++static int
++reg_read_range(struct tda998x_encoder *encoder, uint16_t reg, char *buf,
++		int cnt)
++{
++	struct i2c_client *client = encoder->hdmi;
++	uint8_t addr = REG2ADDR(reg);
++	int ret;
++
++	set_page(encoder, reg);
++
++	ret = i2c_master_send(client, &addr, sizeof(addr));
++	if (ret < 0)
++		goto fail;
++
++	ret = i2c_master_recv(client, buf, cnt);
++	if (ret < 0)
++		goto fail;
++
++	return ret;
++
++fail:
++	dev_err(&client->dev, "Error %d reading from 0x%x\n", ret, reg);
++	return ret;
++}
++
++static uint8_t
++reg_read(struct tda998x_encoder *encoder, uint16_t reg)
++{
++	uint8_t val = 0;
++	reg_read_range(encoder, reg, &val, sizeof(val));
++	return val;
++}
++
++static void
++reg_write(struct tda998x_encoder *encoder, uint16_t reg, uint8_t val)
++{
++	struct i2c_client *client = encoder->hdmi;
++	uint8_t buf[] = {REG2ADDR(reg), val};
++	int ret;
++
++	set_page(encoder, reg);
++
++	ret = i2c_master_send(client, buf, ARRAY_SIZE(buf));
++	if (ret < 0)
++		dev_err(&client->dev, "Error %d writing to 0x%x\n", ret, reg);
++}
++
++static void
++reg_write16(struct tda998x_encoder *encoder, uint16_t reg, uint16_t val)
++{
++	struct i2c_client *client = encoder->hdmi;
++	uint8_t buf[] = {REG2ADDR(reg), val >> 8, val};
++	int ret;
++
++	set_page(encoder, reg);
++
++	ret = i2c_master_send(client, buf, ARRAY_SIZE(buf));
++	if (ret < 0)
++		dev_err(&client->dev, "Error %d writing to 0x%x\n", ret, reg);
++}
++
++static void
++reg_set(struct tda998x_encoder *encoder, uint16_t reg, uint8_t val)
++{
++	reg_write(encoder, reg, reg_read(encoder, reg) | val);
++}
++
++static void
++reg_clear(struct tda998x_encoder *encoder, uint16_t reg, uint8_t val)
++{
++	reg_write(encoder, reg, reg_read(encoder, reg) & ~val);
++}
++
++static void
++tda998x_reset(struct tda998x_encoder *encoder)
++{
++	encoder->current_page = 0xff;
++	set_page(encoder, 0x0000);
++	/* reset audio and i2c master: */
++	reg_set(encoder, REG_SOFTRESET, SOFTRESET_AUDIO | SOFTRESET_I2C_MASTER);
++	msleep(50);
++	reg_clear(encoder, REG_SOFTRESET, SOFTRESET_AUDIO |
++					SOFTRESET_I2C_MASTER);
++	msleep(50);
++
++	/* reset transmitter: */
++	reg_set(encoder, REG_MAIN_CNTRL0, MAIN_CNTRL0_SR);
++	reg_clear(encoder, REG_MAIN_CNTRL0, MAIN_CNTRL0_SR);
++
++	/* PLL registers common configuration */
++	/* PLL output frequency range (400 to 800 Msample/s) */
++	reg_write(encoder, REG_PLL_SERIAL_2, PLL_SERIAL_2_SRL_NOSC(2));
++	reg_write(encoder, REG_MUX_VP_VIP_OUT, 0x24);
++}
++
++void tda998x_vipsync_param(struct tda998x_encoder *encoder)
++{
++	/* set sync-param. for video input port */
++	reg_write(encoder, REG_VIP_CNTRL_3, 0);
++	reg_set(encoder, REG_VIP_CNTRL_3, VIP_CNTRL_3_SYNC_HS);
++	reg_set(encoder, REG_VIP_CNTRL_3, VIP_CNTRL_3_EDGE);
++	/*
++	 * TDA19988 requires high-active sync at input stage,
++	 * so invert low-active sync provided by master encoder here
++	 */
++	reg_set(encoder, REG_VIP_CNTRL_3, VIP_CNTRL_3_H_TGL);
++	reg_set(encoder, REG_VIP_CNTRL_3, VIP_CNTRL_3_V_TGL);
++}
++
++void tda998x_voutsync_param(struct tda998x_encoder *encoder)
++{
++	uint8_t reg = 0;
++	/* synchronization is based on comb. of vsync and hsync */
++	reg_clear(encoder, REG_TBG_CNTRL_0, 0x00);
++
++	reg_write(encoder, REG_TBG_CNTRL_0, 0x00);
++	reg =	TBG_CNTRL_1_X_EXT |
++		TBG_CNTRL_1_H_EXT |
++		TBG_CNTRL_1_V_EXT |
++		TBG_CNTRL_1_DWIN_DIS; /* HDCP off */
++	reg |= TBG_CNTRL_1_TGL_EN;
++	reg |= TBG_CNTRL_1_V_TGL;
++	reg |= TBG_CNTRL_1_H_TGL;
++	reg_write(encoder, REG_TBG_CNTRL_1, reg);
++}
++
++void tda998x_set_vip(struct tda998x_encoder *encoder)
++{
++	/* enable video ports */
++	reg_write(encoder, REG_ENA_VP_0, 0xff);
++	reg_write(encoder, REG_ENA_VP_1, 0xff);
++	reg_write(encoder, REG_ENA_VP_2, 0xff);
++
++	/* set rgb port muxing after enabling ports: rgb 4:4:4 ext. sync*/
++	reg_write(encoder, REG_VIP_CNTRL_0,
++		VIP_CNTRL_0_SWAP_A(2) | VIP_CNTRL_0_SWAP_B(3));
++	reg_write(encoder, REG_VIP_CNTRL_1,
++		VIP_CNTRL_1_SWAP_C(0) | VIP_CNTRL_1_SWAP_D(1));
++	reg_write(encoder, REG_VIP_CNTRL_2,
++		VIP_CNTRL_2_SWAP_E(4) | VIP_CNTRL_2_SWAP_F(5));
++	/* no insertion of test pattern */
++	reg_write(encoder, REG_VIP_CNTRL_4, VIP_CNTRL_4_BLANKIT(0) |
++			VIP_CNTRL_4_BLC(0));
++}
++
++static void tda998x_mode_set(struct tda998x_encoder *encoder)
++{
++	uint16_t n_pix, n_line;
++	uint16_t hs_pix_s, hs_pix_e;
++	uint16_t vs1_pix_s, vs1_pix_e, vs1_line_s, vs1_line_e;
++	uint16_t vwin1_line_s, vwin1_line_e;
++	uint16_t de_pix_s, de_pix_e;
++
++	n_pix = encoder->h_active + encoder->h_fporch
++		+ encoder->h_syncpw + encoder->h_bporch;
++	n_line = encoder->v_active + encoder->v_fporch
++		+ encoder->v_syncpw + encoder->v_bporch;
++
++	de_pix_e = encoder->h_active + encoder->h_fporch
++		+ encoder->h_syncpw + encoder->h_bporch;
++	de_pix_s = encoder->h_fporch + encoder->h_syncpw + encoder->h_bporch;
++	hs_pix_e = encoder->h_fporch + encoder->h_syncpw;
++	hs_pix_s = encoder->h_fporch;
++	vs1_line_s = encoder->v_fporch;
++	vs1_line_e = vs1_line_s + encoder->v_syncpw;
++	/*ref_pix = encoder->h_syncpw + encoder->h_bporch + 1;
++	ref_line = encoder->v_syncpw + encoder->v_bporch + 1;*/
++
++	vs1_pix_s = vs1_pix_e = hs_pix_s;
++	vwin1_line_s = encoder->v_fporch + encoder->v_syncpw + encoder->v_bporch;
++	vwin1_line_e = vwin1_line_s + encoder->v_active;
++
++	reg_write(encoder, REG_VIDFORMAT, 0x00);
++	if (encoder->smode == 1) {
++		/* service mode, insert color bar in video path */
++		reg_write(encoder, REG_HVF_CNTRL_0,
++			HVF_CNTRL_0_SM | HVF_CNTRL_0_RWB);
++	} else if (encoder->smode == 2) {
++		/* test pattern with high data activity */
++		reg_write(encoder, REG_HVF_CNTRL_0, 0x00);
++		reg_write(encoder, REG_VIP_CNTRL_4, VIP_CNTRL_4_TST_PAT |
++				VIP_CNTRL_4_BLC(1));
++	} else {
++		reg_write(encoder, REG_HVF_CNTRL_0, 0x00);
++		reg_write(encoder, REG_VIP_CNTRL_4, VIP_CNTRL_4_BLANKIT(0) |
++			VIP_CNTRL_4_BLC(0));
++	}
++
++	reg_write16(encoder, REG_NPIX_MSB, n_pix);
++	reg_write16(encoder, REG_NLINE_MSB, n_line);
++
++	/* setup vsync */
++	reg_write16(encoder, REG_REFLINE_MSB, encoder->ref_line);
++	reg_write16(encoder, REG_VS_LINE_STRT_1_MSB, vs1_line_s);
++	reg_write16(encoder, REG_VS_LINE_END_1_MSB, vs1_line_e);
++	reg_write16(encoder, REG_VS_PIX_STRT_1_MSB, vs1_pix_s);
++	reg_write16(encoder, REG_VS_PIX_END_1_MSB, vs1_pix_e);
++
++	/* setup hsync */
++	reg_write16(encoder, REG_REFPIX_MSB, encoder->ref_pix);
++	reg_write16(encoder, REG_HS_PIX_START_MSB, hs_pix_s);
++	reg_write16(encoder, REG_HS_PIX_STOP_MSB, hs_pix_e);
++
++	/* setup de */
++	reg_write16(encoder, REG_DE_START_MSB, de_pix_s);
++	reg_write16(encoder, REG_DE_STOP_MSB, de_pix_e);
++
++	/* setup vwindow */
++	reg_write16(encoder, REG_VWIN_START_1_MSB, vwin1_line_s);
++	reg_write16(encoder, REG_VWIN_END_1_MSB, vwin1_line_e);
++
++	/* interlaced modes */
++	reg_write16(encoder, REG_VS_LINE_STRT_2_MSB, 0);
++	reg_write16(encoder, REG_VS_LINE_END_2_MSB, 0);
++	reg_write16(encoder, REG_VS_PIX_STRT_2_MSB, 0);
++	reg_write16(encoder, REG_VS_PIX_END_2_MSB, 0);
++	reg_write16(encoder, REG_VWIN_START_2_MSB, 0);
++	reg_write16(encoder, REG_VWIN_END_2_MSB, 0);
++
++	tda998x_vipsync_param(encoder);
++}
++
++static void tda998x_mode_default(struct tda998x_encoder *encoder)
++{
++
++	reg_clear(encoder, REG_MAIN_CNTRL0, MAIN_CNTRL0_SCALER);
++	/* mute the audio FIFO: */
++	reg_set(encoder, REG_AIP_CNTRL_0, AIP_CNTRL_0_RST_FIFO);
++	/* set color matrix bypass flag: */
++	reg_set(encoder, REG_MAT_CONTRL, MAT_CONTRL_MAT_BP);
++	/* set BIAS tmds value: */
++	reg_write(encoder, REG_ANA_GENERAL, 0x09);
++
++	reg_write(encoder, REG_RPT_CNTRL, 0);
++	/* set hdmi video formatter register */
++	reg_write(encoder, REG_HVF_CNTRL_1, HVF_CNTRL_1_VQR(0));
++
++	if (encoder->rev == TDA19988) {
++		/* let incoming pixels fill the active space (if any) */
++		reg_write(encoder, REG_ENABLE_SPACE, 0x01);
++	}
++
++	tda998x_set_vip(encoder);
++	tda998x_vipsync_param(encoder);
++	tda998x_mode_set(encoder);
++	tda998x_voutsync_param(encoder);
++
++	/* set HDMI off -> DVI mode */
++	reg_clear(encoder, REG_TX33, TX33_HDMI);
++	reg_write(encoder, REG_ENC_CNTRL, ENC_CNTRL_CTL_CODE(0));
++}
++
++static int
++tda998x_probe(struct i2c_client *client, const struct i2c_device_id *id)
++{
++	struct tda998x_encoder *encoder;
++	uint8_t reg;
++
++	encoder = kzalloc(sizeof(*encoder), GFP_KERNEL);
++	if (!encoder)
++		return -ENOMEM;
++
++	encoder->cec = client;
++	/* wake up the device: */
++	cec_write(encoder, REG_CEC_ENAMODS,
++			CEC_ENAMODS_EN_RXSENS | CEC_ENAMODS_EN_HDMI);
++
++	encoder->hdmi = i2c_new_dummy(client->adapter, 0x70);
++	if (!encoder->hdmi)
++		goto fail;
++
++	tda998x_reset(encoder);
++	/* read version: */
++	encoder->rev = reg_read(encoder, REG_VERSION_LSB) |
++			reg_read(encoder, REG_VERSION_MSB) << 8;
++	/* mask off feature bits: */
++	encoder->rev &= ~0x30; /* not-hdcp and not-scalar bit */
++
++	switch (encoder->rev) {
++	case TDA9989N2:
++		printk(KERN_INFO "found TDA9989 n2\n");
++		break;
++	case TDA19989:
++		printk(KERN_INFO "found TDA19989\n");
++		break;
++	case TDA19989N2:
++		printk(KERN_INFO "found TDA19989 n2\n");
++		break;
++	case TDA19988:
++		printk(KERN_INFO "found TDA19988\n");
++		break;
++	default:
++		printk(KERN_INFO "found unsupported device: %04x\n",
++			encoder->rev);
++		goto fail;
++	}
++
++	/* after reset, enable DDC: */
++	reg_write(encoder, REG_DDC_DISABLE, 0x00);
++	/* set clock on DDC channel: */
++	reg_write(encoder, REG_TX3, 39);
++	/* if necessary, disable multi-master: */
++	if (encoder->rev == TDA19989)
++		reg_set(encoder, REG_I2C_MASTER, I2C_MASTER_DIS_MM);
++
++	/* TODO: on/off ? */
++	/* cec_write(encoder, REG_CEC_FRO_IM_CLK_CTRL,
++			| CEC_FRO_IM_CLK_CTRL_GHOST_DIS
++			| CEC_FRO_IM_CLK_CTRL_IMCLK_SEL);*/
++
++	if (cec_read(encoder, REG_CEC_RXSHPDLEV) & CEC_RXSHPDLEV_RXSENS)
++		printk(KERN_INFO "tda19988: display connected\n");
++
++	encoder->h_active = HA_720P;
++	encoder->h_fporch = HFP_720P;
++	encoder->h_syncpw = HSPW_720P;
++	encoder->h_bporch = HBP_720P;
++	encoder->v_active = VA_720P;
++	encoder->v_fporch = VFP_720P;
++	encoder->v_syncpw = VSPW_720P;
++	encoder->v_bporch = VBP_720P;
++	encoder->ref_pix = HFP_720P + 3;
++	encoder->ref_line = VFP_720P + 1;
++
++	tda998x_mode_default(encoder);
++	reg = reg_read(encoder, REG_VAI_PLL);
++	i2c_set_clientdata(client, encoder);
++	if (tda19988_create_sysfs(encoder))
++		goto fail;
++	return 0;
++
++fail:
++	if (encoder->hdmi)
++		i2c_unregister_device(encoder->hdmi);
++	kfree(encoder);
++	return -ENXIO;
++}
++
++static int
++tda998x_remove(struct i2c_client *client)
++{
++	struct tda998x_encoder *encoder = i2c_get_clientdata(client);
++
++	if (encoder->hdmi) {
++		i2c_unregister_device(encoder->hdmi);
++		tda19988_remove_sysfs(encoder);
++	}
++	kfree(encoder);
++	return 0;
++}
++
++static struct i2c_device_id tda998x_ids[] = {
++	{ "tda998x", 0 },
++	{},
++};
++MODULE_DEVICE_TABLE(i2c, tda998x_ids);
++
++static struct i2c_driver tda998x_driver = {
++	.driver = {
++		.name = "tda998x",
++		.owner = THIS_MODULE,
++	},
++	.probe = tda998x_probe,
++	.remove = tda998x_remove,
++	.id_table = tda998x_ids,
++};
++
++/* Module initialization */
++
++static int __init tda998x_init(void)
++{
++	return i2c_add_driver(&tda998x_driver);
++}
++
++static void __exit tda998x_exit(void)
++{
++	i2c_del_driver(&tda998x_driver);
++}
++
++MODULE_AUTHOR("Rob Clark <robdclark@gmail.com");
++MODULE_DESCRIPTION("NXP Semiconductors TDA998X HDMI Encoder");
++MODULE_LICENSE("GPL");
++
++module_init(tda998x_init);
++module_exit(tda998x_exit);
+-- 
+1.7.9.5
+

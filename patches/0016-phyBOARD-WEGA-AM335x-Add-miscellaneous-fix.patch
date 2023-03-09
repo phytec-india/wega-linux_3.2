@@ -1,0 +1,64 @@
+From 7536809cd0e42717cfc59b50e64d67fb2d3b20d4 Mon Sep 17 00:00:00 2001
+From: Subhendu Biswas <Subendu.b@phytec.in>
+Date: Tue, 25 Feb 2014 17:51:42 +0530
+Subject: [PATCH 16/16] phyBOARD-WEGA-AM335x-Add-miscellaneous-fix
+
+Added backlight init and multiple compiler warning fix.
+
+Signed-off-by: Subhendu Biswas <Subendu.b@phytec.in>
+---
+ arch/arm/mach-omap2/board-pcm051.c |    9 ++++++++-
+ arch/arm/mach-omap2/devices.h      |    3 +++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 5d45408..60750cd 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -290,7 +290,7 @@ static struct da8xx_lcdc_platform_data lcdc_pdata[] = {
+ 		.controller_data	= &lcd_cfg,
+ 		.type			= "ZQ_ZQ3506",
+ 	}, {
+-		.manu_name		= "NEC Display model",
++		.manu_name		= "NECdisplay",
+ 		.controller_data	= &lcd_cfg,
+ 		.type			= "NL4827HC19",
+ 	},
+@@ -400,6 +400,12 @@ static void __init peb_av_01(void)
+ 
+ 	i2c_register_board_info(1, pcm051_peb_av_01_boardinfo, 1);
+ }
++static void __init backlight_init(void)
++{
++	setup_pin_mux(ecap2_pin_mux);
++
++	am33xx_ecap2_init(0);
++}
+ 
+ /* Setup McASP 0 (Multichannel Audio Serial Port) */
+ static void mcasp0_init(int evm_id, int profile)
+@@ -428,6 +434,7 @@ static void __init pcm051_init(void)
+ 	wega_board();
+ 	peb_eval_01_init();
+ 	peb_av_01();
++	backlight_init();
+ 
+ 	omap_register_i2c_bus(1, 100, NULL, 0);
+ 	mcasp0_init(0, 0);
+diff --git a/arch/arm/mach-omap2/devices.h b/arch/arm/mach-omap2/devices.h
+index 3f8d923..1455483 100644
+--- a/arch/arm/mach-omap2/devices.h
++++ b/arch/arm/mach-omap2/devices.h
+@@ -13,6 +13,9 @@
+ #define __ARCH_ARM_MACH_OMAP_DEVICES_H
+ 
+ struct isp_platform_data;
++struct snd_platform_data;
++struct mfd_tscadc_board;
++struct pwmss_platform_data;
+ 
+ int omap3_init_camera(struct isp_platform_data *pdata);
+ 
+-- 
+1.7.9.5
+

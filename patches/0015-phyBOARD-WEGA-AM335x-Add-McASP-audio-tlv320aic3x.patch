@@ -1,0 +1,356 @@
+From b424623da2ccaaaff1eed56d1b989aabbd533db6 Mon Sep 17 00:00:00 2001
+From: Subhendu Biswas <Subendu.b@phytec.in>
+Date: Tue, 25 Feb 2014 17:18:42 +0530
+Subject: [PATCH 15/16] phyBOARD-WEGA-AM335x-Add-McASP-audio-tlv320aic3x
+
+Added support for wega audio tlv320aic3x.
+
+Signed-off-by: Shravan kumar <shravan.k@phytec.in>
+Signed-off-by: Ashutosh singh <ashutosh.s@phytec.in>
+---
+ arch/arm/configs/pcm051_defconfig  |    5 ++
+ arch/arm/mach-omap2/board-pcm051.c |   48 +++++++++++-
+ sound/soc/davinci/Kconfig          |    2 +-
+ sound/soc/davinci/davinci-pcm051.c |  152 +++++++++++++++++-------------------
+ 4 files changed, 125 insertions(+), 82 deletions(-)
+
+diff --git a/arch/arm/configs/pcm051_defconfig b/arch/arm/configs/pcm051_defconfig
+index c304745..9558ddd 100644
+--- a/arch/arm/configs/pcm051_defconfig
++++ b/arch/arm/configs/pcm051_defconfig
+@@ -234,6 +234,11 @@ CONFIG_FONTS=y
+ CONFIG_FONT_8x8=y
+ CONFIG_FONT_8x16=y
+ CONFIG_LOGO=y
++CONFIG_SOUND=y
++CONFIG_SND=y
++CONFIG_SND_SOC=y
++CONFIG_SND_AM33XX_SOC=y
++CONFIG_SND_PCM051_SOC_BOARD=y
+ CONFIG_USB=y
+ CONFIG_USB_ANNOUNCE_NEW_DEVICES=y
+ CONFIG_USB_DEVICEFS=y
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 526d9cc..5d45408 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -159,6 +159,16 @@ static struct pinmux_config ecap2_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++/* Module pin mux for mcasp0 */
++static struct pinmux_config mcasp0_pin_mux[] = {
++	{"mcasp0_aclkx.mcasp0_aclkx", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"mcasp0_fsx.mcasp0_fsx", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"mcasp0_axr0.mcasp0_axr0", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mcasp0_axr1.mcasp0_axr1", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"mcasp0_ahclkx.mcasp0_ahclkx", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{NULL, 0},
++};
++
+ static struct gpmc_timings am335x_nand_timings = {
+ 
+ 	/* granularity of 10 is sufficient because of calculations */
+@@ -205,6 +215,12 @@ static struct i2c_board_info __initdata pcm051_i2c_rtc_boardinfo[] = {
+ 	},
+ };
+ 
++static struct i2c_board_info __initdata pcm051_i2c_audio_codec_boardinfo[] = {
++	{
++		I2C_BOARD_INFO("tlv320aic3007", 0x18),
++	},
++};
++
+ static struct gpio_led gpio_leds[] = {
+ 	{
+ 		.name			= "peb_eval_01:green:led3",
+@@ -292,6 +308,26 @@ static struct tsc_data am335x_touchscreen_data = {
+ 	.steps_to_configure = 5,
+ };
+ 
++static u8 am335x_iis_serializer_direction0[] = {
++	RX_MODE,	TX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
++};
++
++static struct snd_platform_data pcm051_snd_data0 = {
++	.tx_dma_offset  = 0x46000000,   /* McASP0 */
++	.rx_dma_offset  = 0x46000000,
++	.op_mode        = DAVINCI_MCASP_IIS_MODE,
++	.num_serializer = ARRAY_SIZE(am335x_iis_serializer_direction0),
++	.tdm_slots      = 2,
++	.serial_dir     = am335x_iis_serializer_direction0,
++	.asp_chan_q     = EVENTQ_2, /* davinci-mcsap driver does not use it */
++	.version        = MCASP_VERSION_3,
++	.txnumevt       = 1,
++	.rxnumevt       = 1,
++};
++
+ static struct mfd_tscadc_board tscadc = {
+ 	.tsc_init	= &am335x_touchscreen_data,
+ };
+@@ -314,6 +350,7 @@ static void pcm051_modul_init(void)
+ 
+ 	i2c_register_board_info(1, pcm051_i2c_eeprom_boardinfo, 1);
+ 	i2c_register_board_info(1, pcm051_i2c_rtc_boardinfo, 1);
++	i2c_register_board_info(1, pcm051_i2c_audio_codec_boardinfo, 1);
+ }
+ 
+ static void wega_board(void)
+@@ -364,6 +401,15 @@ static void __init peb_av_01(void)
+ 	i2c_register_board_info(1, pcm051_peb_av_01_boardinfo, 1);
+ }
+ 
++/* Setup McASP 0 (Multichannel Audio Serial Port) */
++static void mcasp0_init(int evm_id, int profile)
++{
++	/* Configure McASP */
++	setup_pin_mux(mcasp0_pin_mux);
++	am335x_register_mcasp(&pcm051_snd_data0, 0);
++	return;
++}
++
+ static void __init pcm051_init(void)
+ {
+ 	am33xx_cpuidle_init();
+@@ -384,7 +430,7 @@ static void __init pcm051_init(void)
+ 	peb_av_01();
+ 
+ 	omap_register_i2c_bus(1, 100, NULL, 0);
+-
++	mcasp0_init(0, 0);
+ }
+ 
+ MACHINE_START(PCM051, "pcm051")
+diff --git a/sound/soc/davinci/Kconfig b/sound/soc/davinci/Kconfig
+index 9c3b609..579a56a 100644
+--- a/sound/soc/davinci/Kconfig
++++ b/sound/soc/davinci/Kconfig
+@@ -104,7 +104,7 @@ config  SND_PCM051_SOC_BOARD
+ 	tristate "SoC Audio support for Phytec PCM051 development board"
+ 	depends on SND_AM33XX_SOC
+ 	select SND_DAVINCI_SOC_MCASP
+-	select SND_SOC_WM8974
++	select SND_SOC_TLV320AIC3X
+ 	help
+ 	  Say Y if you want to add support for SoC audio on
+ 	  Phytec PCM051
+diff --git a/sound/soc/davinci/davinci-pcm051.c b/sound/soc/davinci/davinci-pcm051.c
+index 9c8d597..7362e8a 100644
+--- a/sound/soc/davinci/davinci-pcm051.c
++++ b/sound/soc/davinci/davinci-pcm051.c
+@@ -35,8 +35,7 @@
+ #define AUDIO_FORMAT (SND_SOC_DAIFMT_I2S | \
+ 		SND_SOC_DAIFMT_CBS_CFS | SND_SOC_DAIFMT_NB_NF)
+ 
+-#define PCM051_AUXCLK (25000000)
+-#define CODEC_CLOCK	12288000
++#define PCM051_AUXCLK 25000000
+ 
+ static int pcm051_hw_params(struct snd_pcm_substream *substream,
+ 			 struct snd_pcm_hw_params *params)
+@@ -44,31 +43,22 @@ static int pcm051_hw_params(struct snd_pcm_substream *substream,
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+ 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+-	unsigned int pll_out = 0;
+-	int ret = 0;
+-	int rate, div;
++	int ret = 0, div, rate;
++	unsigned sysclk;
+ 
+ 	rate = params_rate(params);
+-	switch (params_rate(params)) {
+-	case 8000:
+-	case 16000:
+-		pll_out = 12288000;
+-		break;
+-	case 48000:
+-		pll_out = 22579200;
+-		break;
+-	case 96000:
+-		pll_out = 24576000;
+-		break;
+-	case 11025:
+-	case 22050:
+-	case 44100:
+-	case 88200:
+-		pll_out = 22579200;
+-		break;
+-	default:
+-		printk(KERN_ERR "audio clock is not matched pcm051 card\n");
+-	}
++	div = PCM051_AUXCLK / (rate * 16 * 2);
++	ret = snd_soc_dai_set_clkdiv(cpu_dai, DAVINCI_MCASP_CLKXDIV,
++			PCM051_AUXCLK / (rate * 16 * 2));
++	if (ret < 0)
++		return ret;
++
++	if (div/3 > 31)
++		sysclk = PCM051_AUXCLK/4;
++	else if (div > 31)
++		sysclk = PCM051_AUXCLK/3;
++	else
++		sysclk = PCM051_AUXCLK;
+ 
+ 	/* set codec DAI configuration */
+ 	ret = snd_soc_dai_set_fmt(codec_dai, AUDIO_FORMAT);
+@@ -80,96 +70,98 @@ static int pcm051_hw_params(struct snd_pcm_substream *substream,
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	/* set cpu CLKXDIV */
+-	div = PCM051_AUXCLK / (rate * 16 * 2);
+-	ret = snd_soc_dai_set_clkdiv(cpu_dai, DAVINCI_MCASP_CLKXDIV,
+-		PCM051_AUXCLK / (rate * 16 * 2));
++	/* set the codec system clock */
++	ret = snd_soc_dai_set_sysclk(codec_dai, 0, sysclk, SND_SOC_CLOCK_OUT);
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	if (div/3 > 31) {
+-		ret = snd_soc_dai_set_pll(codec_dai, 0, 0, PCM051_AUXCLK/4,
+-		pll_out);
+-		if (ret < 0)
+-			return ret;
+-	} else if (div > 31) {
+-		ret = snd_soc_dai_set_pll(codec_dai, 0, 0, PCM051_AUXCLK/3,
+-		pll_out);
+-		if (ret < 0)
+-			return ret;
+-	} else {
+-
+-	ret = snd_soc_dai_set_pll(codec_dai, 0, 0, PCM051_AUXCLK,
+-		pll_out);
+-		if (ret < 0)
+-			return ret;
+-	}
+ 	return 0;
+-}
+ 
+-static struct snd_soc_ops pcm051_ops = {
+-	.hw_params = pcm051_hw_params,
+-};
++}
+ 
+-/* phytec pcm051 machine dapm widgets */
+-static const struct snd_soc_dapm_widget wm8974_dapm_widgets[] = {
+-	SND_SOC_DAPM_SPK("Loudspeaker", NULL),
+-	SND_SOC_DAPM_LINE("Mono out", NULL),
++/* davinci-evm machine dapm widgets */
++static const struct snd_soc_dapm_widget aic3x_dapm_widgets[] = {
++	SND_SOC_DAPM_HP("Headphone Jack", NULL),
++	SND_SOC_DAPM_LINE("Line Out", NULL),
+ 	SND_SOC_DAPM_MIC("Mic Jack", NULL),
++	SND_SOC_DAPM_LINE("Line In", NULL),
++	SND_SOC_DAPM_SPK("Speaker", NULL),
+ };
+ 
+-/* davinci-pcm051 machine audio_map connections to the codec pins */
++/* davinci-evm machine audio_mapnections to the codec pins */
+ static const struct snd_soc_dapm_route audio_map[] = {
+-	/* Loudspeaker connected to SPKOUTP, SPKOUTN */
+-	{"Loudspeaker", NULL, "SPKOUTP"},
+-	{"Loudspeaker", NULL, "SPKOUTN"},
+-
+-	/* Mono out connected to MONOOUT */
+-	{"Mono out", NULL, "MONOOUT"},
+-
+-	/* Mic connected to MICN */
+-	{"Mic Jack", NULL, "MICN"},
++	/* Headphone connected to HPLOUT, HPROUT */
++	{"Headphone Jack", NULL, "HPLOUT"},
++	{"Headphone Jack", NULL, "HPROUT"},
++
++	/* Line Out connected to LLOUT, RLOUT */
++	{"Line Out", NULL, "LLOUT"},
++	{"Line Out", NULL, "RLOUT"},
++
++	/* Mic connected to (MIC3L | MIC3R) */
++	{"MIC3L", NULL, "Mic Bias 2V"},
++	{"MIC3R", NULL, "Mic Bias 2V"},
++	{"Mic Bias 2V", NULL, "Mic Jack"},
++
++	/* Line In connected to (LINE1L | LINE2L), (LINE1R | LINE2R) */
++	{"LINE1L", NULL, "Line In"},
++	{"LINE2L", NULL, "Line In"},
++	{"LINE1R", NULL, "Line In"},
++	{"LINE2R", NULL, "Line In"},
++
++	/*  Speaker connected to (SPOP | SPOM) */
++	{"SPOP", NULL, "Speaker"},
++	{"SPOM", NULL, "Speaker"},
++};
++static struct snd_soc_ops pcm051_ops = {
++	.hw_params = pcm051_hw_params,
+ };
+ 
+-/* Logic for the wm8974 codec as connected on the phytec pcm051 */
+-static int pcm051_wm8974_init(struct snd_soc_pcm_runtime *rtd)
++static int pcm051_aic3007_init(struct snd_soc_pcm_runtime *rtd)
+ {
+ 	struct snd_soc_codec *codec = rtd->codec;
+ 	struct snd_soc_dapm_context *dapm = &codec->dapm;
+ 
+-	/* Add davinci-pcm051 specific widgets */
+-	snd_soc_dapm_new_controls(dapm, wm8974_dapm_widgets,
+-				  ARRAY_SIZE(wm8974_dapm_widgets));
++	/* Add davinci-evm specific widgets */
++	snd_soc_dapm_new_controls(dapm, aic3x_dapm_widgets,
++				ARRAY_SIZE(aic3x_dapm_widgets));
+ 
+-	/* Set up davinci-pcm051 specific audio path audio_map */
++	/* Set up davinci-evm specific audio path audio_map */
+ 	snd_soc_dapm_add_routes(dapm, audio_map, ARRAY_SIZE(audio_map));
+ 
+ 	/* not connected */
+-	snd_soc_dapm_disable_pin(dapm, "MICP");
+-	snd_soc_dapm_disable_pin(dapm, "AUX");
++	snd_soc_dapm_disable_pin(dapm, "HPLCOM");
++	snd_soc_dapm_disable_pin(dapm, "HPRCOM");
+ 
+ 	/* always connected */
+-	snd_soc_dapm_enable_pin(dapm, "Loudspeaker");
+-	snd_soc_dapm_enable_pin(dapm, "Mono out");
++	snd_soc_dapm_enable_pin(dapm, "Headphone Jack");
++	snd_soc_dapm_enable_pin(dapm, "Line Out");
+ 	snd_soc_dapm_enable_pin(dapm, "Mic Jack");
++	snd_soc_dapm_enable_pin(dapm, "Line In");
++
++	if (machine_is_pcm051()) {
++		snd_soc_dapm_disable_pin(dapm, "LINE2R");
++		snd_soc_dapm_disable_pin(dapm, "LINE2L");
++		snd_soc_dapm_enable_pin(dapm, "Speaker");
++	}
+ 
+ 	return 0;
+ }
+ 
+ static struct snd_soc_dai_link pcm051_dai_link = {
+-	.name = "WM8974",
+-	.stream_name = "WM8974",
++	.name = "TLV320AIC3X",
++	.stream_name = "AIC3X",
+ 	.cpu_dai_name = "davinci-mcasp.0",
+-	.codec_dai_name = "wm8974-hifi",
+-	.codec_name = "wm8974-codec.1-001a",
++	.codec_dai_name = "tlv320aic3x-hifi",
++	.codec_name = "tlv320aic3x-codec.1-0018",
+ 	.platform_name = "davinci-pcm-audio",
+-	.init = pcm051_wm8974_init,
++	.init = pcm051_aic3007_init,
+ 	.ops = &pcm051_ops,
+ };
+ 
+ /* davinci pcm051 audio machine driver */
+ static struct snd_soc_card pcm051_snd_soc_card = {
+-	.name = "PCM051 audio",
++	.name = "PCM051",
+ 	.dai_link = &pcm051_dai_link,
+ 	.num_links = 1,
+ };
+-- 
+1.7.9.5
+

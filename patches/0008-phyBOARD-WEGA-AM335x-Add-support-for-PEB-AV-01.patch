@@ -1,0 +1,283 @@
+From acdbae090dee43d24aace6d5fb856e1700dcf2e5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 6 Nov 2013 18:44:15 +0100
+Subject: [PATCH 08/16] phyBOARD-WEGA-AM335x: Add support for PEB-AV-01
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add support for HDMI Video only on phyBOARD-WEGA-AM335x.
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/am33xx_generic.c |   19 ++++++
+ arch/arm/mach-omap2/am33xx_generic.h |    2 +
+ arch/arm/mach-omap2/board-pcaaxs1.c  |   17 -----
+ arch/arm/mach-omap2/board-pcm051.c   |  115 ++++++++++++++++++++++++++++++++++
+ arch/arm/mach-omap2/board-pfla03.c   |   17 -----
+ 5 files changed, 136 insertions(+), 34 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/am33xx_generic.c b/arch/arm/mach-omap2/am33xx_generic.c
+index eab6a5a..97596a1 100644
+--- a/arch/arm/mach-omap2/am33xx_generic.c
++++ b/arch/arm/mach-omap2/am33xx_generic.c
+@@ -20,7 +20,9 @@
+ #include <linux/clk.h>
+ #include <linux/err.h>
+ #include <linux/rtc/rtc-omap.h>
++#include <video/da8xx-fb.h>
+ #include <mach/hardware.h>
++#include <plat/lcdc.h>
+ #include <plat/omap_hwmod.h>
+ #include <plat/omap_device.h>
+ #include <asm/io.h>
+@@ -67,6 +69,23 @@ void setup_pin_mux(struct pinmux_config *pin_mux)
+ 		omap_mux_init_signal(pin_mux->string_name, pin_mux->val);
+ }
+ 
++int __init conf_disp_pll(int rate)
++{
++	struct clk *disp_pll;
++	int ret = -EINVAL;
++
++	disp_pll = clk_get(NULL, "dpll_disp_ck");
++	if (IS_ERR(disp_pll)) {
++		pr_err("Cannot clk_get disp_pll\n");
++		goto out;
++	}
++
++	ret = clk_set_rate(disp_pll, rate);
++	clk_put(disp_pll);
++out:
++	return ret;
++}
++
+ /* unlock values for rtc */
+ #define RTC_UNLOCK_VAL1			0x83e70b13
+ #define RTC_UNLOCK_VAL2			0x95a4f1e0
+diff --git a/arch/arm/mach-omap2/am33xx_generic.h b/arch/arm/mach-omap2/am33xx_generic.h
+index 9a19c5e..cfdfa2e 100644
+--- a/arch/arm/mach-omap2/am33xx_generic.h
++++ b/arch/arm/mach-omap2/am33xx_generic.h
+@@ -18,6 +18,8 @@ struct pinmux_config {
+ 
+ void setup_pin_mux(struct pinmux_config *pin_mux);
+ 
++int conf_disp_pll(int rate);
++
+ void am335x_internal_rtc_init(void);
+ 
+ #endif
+diff --git a/arch/arm/mach-omap2/board-pcaaxs1.c b/arch/arm/mach-omap2/board-pcaaxs1.c
+index 6fb117b..acc2514 100644
+--- a/arch/arm/mach-omap2/board-pcaaxs1.c
++++ b/arch/arm/mach-omap2/board-pcaaxs1.c
+@@ -527,23 +527,6 @@ static void tsc_init(void)
+ 	setup_pin_mux(tsc_pin_mux);
+ }
+ 
+-static int __init conf_disp_pll(int rate)
+-{
+-	struct clk *disp_pll;
+-	int ret = -EINVAL;
+-
+-	disp_pll = clk_get(NULL, "dpll_disp_ck");
+-	if (IS_ERR(disp_pll)) {
+-		pr_err("Cannot clk_get disp_pll\n");
+-		goto out;
+-	}
+-
+-	ret = clk_set_rate(disp_pll, rate);
+-	clk_put(disp_pll);
+-out:
+-	return ret;
+-}
+-
+ static void lcdc_init(void)
+ {
+ 	int ret;
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 815ee72..10edeb7 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -47,6 +47,9 @@
+ #include <plat/common.h>
+ #include <plat/nand.h>
+ 
++#include <video/da8xx-fb.h>
++#include <plat/lcdc.h>
++
+ #include "board-flash.h"
+ #include "mux.h"
+ #include "common.h"
+@@ -100,6 +103,55 @@ static struct pinmux_config btn_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++/* Module pin mux for LCDC */
++static struct pinmux_config lcdc_pin_mux[] = {
++	{"lcd_data0.lcd_data0",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data1.lcd_data1",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data2.lcd_data2",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data3.lcd_data3",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data4.lcd_data4",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data5.lcd_data5",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data6.lcd_data6",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data7.lcd_data7",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data8.lcd_data8",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data9.lcd_data9",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data10.lcd_data10",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data11.lcd_data11",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data12.lcd_data12",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data13.lcd_data13",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data14.lcd_data14",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"lcd_data15.lcd_data15",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT
++							| AM33XX_PULL_DISA},
++	{"gpmc_ad8.lcd_data16",		OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad9.lcd_data17",		OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad10.lcd_data18",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad11.lcd_data19",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad12.lcd_data20",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad13.lcd_data21",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad14.lcd_data22",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_ad15.lcd_data23",	OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"lcd_vsync.lcd_vsync",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"lcd_hsync.lcd_hsync",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"lcd_pclk.lcd_pclk",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{"lcd_ac_bias_en.lcd_ac_bias_en", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
++	{NULL, 0},
++};
++
+ static struct gpmc_timings am335x_nand_timings = {
+ 
+ 	/* granularity of 10 is sufficient because of calculations */
+@@ -167,6 +219,53 @@ static struct platform_device leds_gpio = {
+ 	},
+ };
+ 
++static struct i2c_board_info __initdata pcm051_peb_av_01_boardinfo[] = {
++	{
++		I2C_BOARD_INFO("tda998x", 0x34),
++	},
++};
++
++static const struct display_panel disp_panel = {
++	WVGA,
++	32,
++	32,
++	COLOR_ACTIVE,
++};
++
++static struct lcd_ctrl_config lcd_cfg = {
++	&disp_panel,
++	.ac_bias		= 40,
++	.ac_bias_intrpt		= 0,
++	.dma_burst_sz		= 16,
++	.bpp			= 32,
++	.fdd			= 0x80,
++	.tft_alt_mode		= 0,
++	.stn_565_mode		= 0,
++	.mono_8bit_mode		= 0,
++	.invert_line_clock	= 1,
++	.invert_frm_clock	= 1,
++	.sync_edge		= 0,
++	.sync_ctrl		= 1,
++	.raster_order		= 0,
++};
++
++static struct da8xx_lcdc_platform_data lcdc_pdata[] = {
++	{
++		.manu_name		= "genericDVI",
++		.controller_data	= &lcd_cfg,
++		.type			= "DVI_XGA",
++	}, {
++		.manu_name		= "genericDVI",
++		.controller_data	= &lcd_cfg,
++		.type			= "DVI_720P",
++	}
++};
++
++static struct da8xx_lcdc_selection_platform_data lcdc_selection_pdata = {
++	.entries_ptr = lcdc_pdata,
++	.entries_cnt = ARRAY_SIZE(lcdc_pdata)
++};
++
+ static void pcm051_modul_init(void)
+ {
+ 	am335x_nand_init(&am335x_nand_timings);
+@@ -202,6 +301,21 @@ static void __init peb_eval_01_init(void)
+ 	platform_device_register(&leds_gpio);
+ }
+ 
++static void __init peb_av_01(void)
++{
++	setup_pin_mux(lcdc_pin_mux);
++
++	if (conf_disp_pll(300000000)) {
++		pr_info("Failed configure display PLL, not attempting to"
++			"register LCDC\n");
++		return;
++	}
++
++	am33xx_register_lcdc(&lcdc_selection_pdata);
++
++	i2c_register_board_info(1, pcm051_peb_av_01_boardinfo, 1);
++}
++
+ static void __init pcm051_init(void)
+ {
+ 	am33xx_cpuidle_init();
+@@ -219,6 +333,7 @@ static void __init pcm051_init(void)
+ 	pcm051_modul_init();
+ 	wega_board();
+ 	peb_eval_01_init();
++	peb_av_01();
+ 
+ 	omap_register_i2c_bus(1, 100, NULL, 0);
+ 
+diff --git a/arch/arm/mach-omap2/board-pfla03.c b/arch/arm/mach-omap2/board-pfla03.c
+index 779ba09..bcfe95e 100644
+--- a/arch/arm/mach-omap2/board-pfla03.c
++++ b/arch/arm/mach-omap2/board-pfla03.c
+@@ -495,23 +495,6 @@ static void pfla03_nand_init(void)
+ 	omap_init_elm();
+ }
+ 
+-static int __init conf_disp_pll(int rate)
+-{
+-	struct clk *disp_pll;
+-	int ret = -EINVAL;
+-
+-	disp_pll = clk_get(NULL, "dpll_disp_ck");
+-	if (IS_ERR(disp_pll)) {
+-		pr_err("Cannot clk_get disp_pll\n");
+-		goto out;
+-	}
+-
+-	ret = clk_set_rate(disp_pll, rate);
+-	clk_put(disp_pll);
+-out:
+-	return ret;
+-}
+-
+ #define GPIO_DISPLAY_EN		117
+ 
+ static void pfla03_lcdc_init(void)
+-- 
+1.7.9.5
+

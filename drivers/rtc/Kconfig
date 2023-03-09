@@ -272,12 +272,12 @@ config RTC_DRV_PCF8583
 	  will be called rtc-pcf8583.
 
 config RTC_DRV_M41T80
-	tristate "ST M41T62/65/M41T80/81/82/83/84/85/87"
+	tristate "ST M41T62/65/M41T80/81/82/83/84/85/87 RV-4162-C7"
 	help
 	  If you say Y here you will get support for the ST M41T60
 	  and M41T80 RTC chips series. Currently, the following chips are
 	  supported: M41T62, M41T65, M41T80, M41T81, M41T82, M41T83, M41ST84,
-	  M41ST85, and M41ST87.
+	  M41ST85, M41ST87 and RV-4162-C7 from Micro Crystal.
 
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-m41t80.
@@ -314,7 +314,7 @@ config RTC_DRV_TWL92330
 	  the Menelaus driver; it's not separate module.
 
 config RTC_DRV_TWL4030
-	tristate "TI TWL4030/TWL5030/TWL6030/TPS659x0"
+	tristate "TI TWL4030/TWL5030/TWL6030"
 	depends on RTC_CLASS && TWL4030_CORE
 	help
 	  If you say yes here you get support for the RTC on the
@@ -322,6 +322,13 @@ config RTC_DRV_TWL4030
 
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-twl.
+
+config RTC_DRV_TPS65910
+	tristate "TI TPS65910"
+	depends on RTC_CLASS && MFD_TPS65910
+	help
+	  If you say yes here you get support for the RTC on the
+	  TPS65910.
 
 config RTC_DRV_S35390A
 	tristate "Seiko Instruments S-35390A"
@@ -733,7 +740,7 @@ config RTC_DRV_DAVINCI
 
 config RTC_DRV_OMAP
 	tristate "TI OMAP1"
-	depends on ARCH_OMAP15XX || ARCH_OMAP16XX || ARCH_OMAP730 || ARCH_DAVINCI_DA8XX
+	depends on ARCH_OMAP15XX || ARCH_OMAP16XX || ARCH_OMAP730 || ARCH_DAVINCI_DA8XX || SOC_OMAPAM33XX
 	help
 	  Say "yes" here to support the real time clock on TI OMAP1 and
 	  DA8xx/OMAP-L13x chips.  This driver can also be built as a

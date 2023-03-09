@@ -1,0 +1,70 @@
+From 6eeeab00f1ec15a21a3873c36ae9dd859e3f9bf4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 20 Nov 2013 10:50:44 +0100
+Subject: [PATCH 10/16] phyBOARD-AM335x-WEGA: Remove PMIC IRQ
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Remove PMIC IRQ functionality as the pin is used for extension boards.
+This also removes the PMIC RTC support for the kernel.
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/am33xx_devices.c |   11 +++++++----
+ arch/arm/mach-omap2/board-pcm051.c   |    9 +--------
+ 2 files changed, 8 insertions(+), 12 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/am33xx_devices.c b/arch/arm/mach-omap2/am33xx_devices.c
+index 08803fe..2f684e0 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.c
++++ b/arch/arm/mach-omap2/am33xx_devices.c
+@@ -313,11 +313,14 @@ int __init am33xx_tps65910_init(int i2c_busnum, int gpio_irq)
+ {
+ 	int ret;
+ 
+-	ret = gpio_request_one(gpio_irq, GPIOF_IN, "rtc-tps65910-irq");
+-	if (ret)
+-		return ret;
++	if (gpio_irq >= 0) {
++		ret = gpio_request_one(gpio_irq, GPIOF_IN, "rtc-tps65910-irq");
++		if (ret)
++			return ret;
++
++		am335x_tps65910_info.irq = OMAP_GPIO_IRQ(gpio_irq);
++	}
+ 
+-	am335x_tps65910_info.irq = OMAP_GPIO_IRQ(gpio_irq);
+ 	i2c_register_board_info(i2c_busnum, am335x_tps65910_boardinfo, 1);
+ 
+ 	return 0;
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index c3fdedb..df67ba0 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -57,12 +57,6 @@
+ #include "am33xx_generic.h"
+ #include "am33xx_devices.h"
+ 
+-/* Module pin mux for tps65910 irq */
+-static struct pinmux_config pmic_irq_pin_mux[] = {
+-	{"mii1_rxdv.gpio3_4",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
+-	{NULL, 0},
+-};
+-
+ /* Pin mux for mmc0 cd */
+ static struct pinmux_config mmc0_cd_pin_mux[] = {
+ 	{"spi0_cs1.mmc0_sdcd",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
+@@ -271,8 +265,7 @@ static void pcm051_modul_init(void)
+ {
+ 	am335x_nand_init(&am335x_nand_timings);
+ 
+-	setup_pin_mux(pmic_irq_pin_mux);
+-	am33xx_tps65910_init(1, GPIO_TO_PIN(3, 4));
++	am33xx_tps65910_init(1, -1);
+ 
+ 	i2c_register_board_info(1, pcm051_i2c_eeprom_boardinfo, 1);
+ 	i2c_register_board_info(1, pcm051_i2c_rtc_boardinfo, 1);
+-- 
+1.7.9.5
+

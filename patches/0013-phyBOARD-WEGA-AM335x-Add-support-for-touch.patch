@@ -1,0 +1,89 @@
+From 5614ca23515369e50ae95841ea49c75437327d82 Mon Sep 17 00:00:00 2001
+From: Subhendu Biswas <Subendu.b@phytec.in>
+Date: Mon, 24 Feb 2014 15:50:49 +0530
+Subject: [PATCH 13/16] phyBOARD-WEGA-AM335x-Add-support-for-touch
+
+Add support for resistive touch.
+
+Signed-off-by: Subhendu Biswas <Subendu.b@phytec.in>
+---
+ arch/arm/configs/pcm051_defconfig  |    2 ++
+ arch/arm/mach-omap2/board-pcm051.c |   28 ++++++++++++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/arch/arm/configs/pcm051_defconfig b/arch/arm/configs/pcm051_defconfig
+index 380b863..c304745 100644
+--- a/arch/arm/configs/pcm051_defconfig
++++ b/arch/arm/configs/pcm051_defconfig
+@@ -160,6 +160,7 @@ CONFIG_INPUT_EVDEV=y
+ CONFIG_KEYBOARD_GPIO=y
+ CONFIG_KEYBOARD_MATRIX=y
+ CONFIG_INPUT_TOUCHSCREEN=y
++CONFIG_TOUCHSCREEN_TI_TSC=y
+ CONFIG_INPUT_MISC=y
+ # CONFIG_SERIO_SERPORT is not set
+ CONFIG_VT_HW_CONSOLE_BINDING=y
+@@ -182,6 +183,7 @@ CONFIG_ECAP_PWM=y
+ CONFIG_SENSORS_LM75=y
+ CONFIG_WATCHDOG=y
+ CONFIG_OMAP_WATCHDOG=y
++CONFIG_MFD_TI_TSCADC=y
+ CONFIG_MFD_TPS65910=y
+ CONFIG_REGULATOR_DUMMY=y
+ CONFIG_REGULATOR_FIXED_VOLTAGE=y
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 88d3645..f8aa3b7 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -56,6 +56,12 @@
+ #include "cm33xx.h"
+ #include "am33xx_generic.h"
+ #include "am33xx_devices.h"
++#include "devices.h"
++
++/* TSc controller */
++#include <linux/input/ti_tsc.h>
++#include <linux/mfd/ti_tscadc.h>
++#include <linux/platform_data/ti_adc.h>
+ 
+ /* Pin mux for mmc0 cd */
+ static struct pinmux_config mmc0_cd_pin_mux[] = {
+@@ -273,6 +279,27 @@ static struct da8xx_lcdc_selection_platform_data lcdc_selection_pdata = {
+ 	.entries_cnt = ARRAY_SIZE(lcdc_pdata)
+ };
+ 
++/* TSc platform data */
++static struct tsc_data am335x_touchscreen_data = {
++	.wires	= 4,
++	.x_plate_resistance = 200,
++	.steps_to_configure = 5,
++};
++
++static struct mfd_tscadc_board tscadc = {
++	.tsc_init	= &am335x_touchscreen_data,
++};
++
++/* TSc initialization */
++static void am335x_tsc_init(void)
++{
++	int err;
++
++	err = am33xx_register_mfd_tscadc(&tscadc);
++	if (err)
++		pr_err("failed to register touchscreen device\n");
++}
++
+ static void pcm051_modul_init(void)
+ {
+ 	am335x_nand_init(&am335x_nand_timings);
+@@ -298,6 +325,7 @@ static void wega_board(void)
+ 	setup_pin_mux(d_can1_pin_mux);
+ 	am33xx_d_can_init(1);
+ 
++	am335x_tsc_init();
+ }
+ 
+ static void __init peb_eval_01_init(void)
+-- 
+1.7.9.5
+

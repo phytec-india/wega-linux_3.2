@@ -1,0 +1,151 @@
+From 8b2e4ed6e2721e37f1a984b4fe66a1f1e89baa86 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 6 Nov 2013 11:40:58 +0100
+Subject: [PATCH 02/16] phyBOARD-WEGA-AM335x: Add ethernet support
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Added support for both eth interfaces (RMII1 and MII2).
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/am33xx_devices.c     |   44 ++++++++++++++++++++++++++++++
+ arch/arm/mach-omap2/am33xx_devices.h     |    2 ++
+ arch/arm/mach-omap2/board-pcm051.c       |    2 ++
+ arch/arm/mach-omap2/control.h            |    3 ++
+ arch/arm/mach-omap2/devices.c            |    4 ++-
+ arch/arm/plat-omap/include/plat/am33xx.h |    1 +
+ 6 files changed, 55 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-omap2/am33xx_devices.c b/arch/arm/mach-omap2/am33xx_devices.c
+index 16df455..9f1a74a 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.c
++++ b/arch/arm/mach-omap2/am33xx_devices.c
+@@ -134,6 +134,50 @@ void __init am335x_mmc0_init(int gpio_cd, int gpio_wp)
+ 	return;
+ }
+ 
++/* Module pin mux for rmii1 */
++static struct pinmux_config rmii1_pin_mux[] = {
++	{"mii1_crs.rmii1_crs_dv", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mii1_rxerr.mii1_rxerr", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mii1_txen.mii1_txen", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"mii1_txd1.mii1_txd1", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"mii1_txd0.mii1_txd0", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"mii1_rxd1.mii1_rxd1", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"mii1_rxd0.mii1_rxd0", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"rmii1_refclk.rmii1_refclk", OMAP_MUX_MODE0 |
++					AM33XX_PIN_INPUT_PULLDOWN},
++	{"mdio_data.mdio_data", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLUP},
++	{"mdio_clk.mdio_clk", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT_PULLUP},
++	{NULL, 0},
++};
++
++/* Module pin mux for mii2 */
++static struct pinmux_config mii2_pin_mux[] = {
++	{"gpmc_wpn.mii2_rxerr", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a0.mii2_txen", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_a1.mii2_rxdv", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a2.mii2_txd3", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_a3.mii2_txd2", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_a4.mii2_txd1", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_a5.mii2_txd0", OMAP_MUX_MODE1 | AM33XX_PIN_OUTPUT},
++	{"gpmc_a6.mii2_txclk", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a7.mii2_rxclk", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a8.mii2_rxd3", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a9.mii2_rxd2", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a10.mii2_rxd1", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_a11.mii2_rxd0", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{"gpmc_ben1.mii2_col", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLDOWN},
++	{NULL, 0},
++};
++
++void __init am33xx_rmii1_mii2_init(unsigned char *phy_id0,
++						unsigned char *phy_id1)
++{
++	setup_pin_mux(rmii1_pin_mux);
++	setup_pin_mux(mii2_pin_mux);
++
++	am33xx_cpsw_init(AM33XX_CPSW_MODE_RMII1_MII2, phy_id0, phy_id1);
++}
++
+ static struct resource am33xx_cpuidle_resources[] = {
+ 	{
+ 		.start		= AM33XX_EMIF0_BASE,
+diff --git a/arch/arm/mach-omap2/am33xx_devices.h b/arch/arm/mach-omap2/am33xx_devices.h
+index 14fe7b5..d821416 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.h
++++ b/arch/arm/mach-omap2/am33xx_devices.h
+@@ -12,5 +12,7 @@ extern void am335x_mmc0_init(int gpio_cd, int gpio_wp);
+ extern void am33xx_cpuidle_init(void);
+ extern void am33xx_clkout1_enable(void);
+ extern void am33xx_tps65910_init(int i2c_busnum, int gpio_irq);
++extern void am33xx_rmii1_mii2_init(unsigned char *phy_id0,
++						unsigned char *phy_id1);
+ 
+ #endif
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 5df9f93..37fa1e3 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -135,6 +135,8 @@ static void wega_board(void)
+ 
+ 	setup_pin_mux(mmc0_cd_pin_mux);
+ 	am335x_mmc0_init(GPIO_TO_PIN(0, 6), -1);
++
++	am33xx_rmii1_mii2_init("0:00", "0:01");
+ }
+ 
+ static void __init pcm051_init(void)
+diff --git a/arch/arm/mach-omap2/control.h b/arch/arm/mach-omap2/control.h
+index 2d1b680..1f9d476 100644
+--- a/arch/arm/mach-omap2/control.h
++++ b/arch/arm/mach-omap2/control.h
+@@ -382,6 +382,9 @@
+ #define AM33XX_RGMII_MODE_EN		((0x2 << 0) | (0x2 << 2) | \
+ 					(AM33XX_RGMII_DISABLE_INT_DLY))
+ 
++#define AM33XX_RMII1_MII2_MODE_EN	((1 << 0) | \
++					AM33XX_RMII1_SRC_CLK_PIN)
++
+ #define AM33XX_RMII1_RGMII2_MODE_EN	((0x1 << 0) | (0x2 << 2) | \
+ 					AM33XX_RMII1_SRC_CLK_PIN | \
+ 					AM33XX_RGMII_DISABLE_INT_DLY)
+diff --git a/arch/arm/mach-omap2/devices.c b/arch/arm/mach-omap2/devices.c
+index 0ef4cc5..d5ae79c 100644
+--- a/arch/arm/mach-omap2/devices.c
++++ b/arch/arm/mach-omap2/devices.c
+@@ -1235,7 +1235,6 @@ static struct cpsw_platform_data am33xx_cpsw_pdata = {
+ 	.bd_ram_size		= SZ_8K,
+ 	.rx_descs               = 64,
+ 	.mac_control            = BIT(5), /* MIIEN */
+-	.gigabit_en		= 1,
+ 	.host_port_num		= 0,
+ 	.no_bd_ram		= false,
+ 	.version		= CPSW_VERSION_2,
+@@ -1330,6 +1329,9 @@ int am33xx_cpsw_init(enum am33xx_cpsw_mac_mode mode, unsigned char *phy_id0,
+ 	case AM33XX_CPSW_MODE_RMII2_RGMII1:
+ 		gmii_sel = AM33XX_RMII2_RGMII1_MODE_EN;
+ 		break;
++	case AM33XX_CPSW_MODE_RMII1_MII2:
++		gmii_sel = AM33XX_RMII1_MII2_MODE_EN;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/arch/arm/plat-omap/include/plat/am33xx.h b/arch/arm/plat-omap/include/plat/am33xx.h
+index 3255e4d..3956004 100644
+--- a/arch/arm/plat-omap/include/plat/am33xx.h
++++ b/arch/arm/plat-omap/include/plat/am33xx.h
+@@ -91,6 +91,7 @@ enum am33xx_cpsw_mac_mode {
+ 	AM33XX_CPSW_MODE_RGMII,
+ 	AM33XX_CPSW_MODE_RMII1_RGMII2,
+ 	AM33XX_CPSW_MODE_RMII2_RGMII1,
++	AM33XX_CPSW_MODE_RMII1_MII2,
+ };
+ int am33xx_cpsw_init(enum am33xx_cpsw_mac_mode mode, unsigned char *phy_id0,
+ 		     unsigned char *phy_id1);
+-- 
+1.7.9.5
+

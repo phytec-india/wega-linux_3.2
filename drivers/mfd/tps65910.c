@@ -18,17 +18,30 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/gpio.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/tps65910.h>
+
+#ifdef CONFIG_RTC_DRV_TPS65910
+static struct resource rtc_resources[] = {
+	{
+		.name = "tps65910-rtc",
+		.flags = IORESOURCE_IRQ,
+		.start = 0,		/* filled in later */
+	},
+};
+#endif
 
 static struct mfd_cell tps65910s[] = {
 	{
 		.name = "tps65910-pmic",
 	},
+#ifdef CONFIG_RTC_DRV_TPS65910
 	{
 		.name = "tps65910-rtc",
+		.resources = rtc_resources,
+		.num_resources = ARRAY_SIZE(rtc_resources),
 	},
+#endif
 	{
 		.name = "tps65910-power",
 	},
@@ -138,6 +151,7 @@ static int tps65910_i2c_probe(struct i2c_client *i2c,
 	struct tps65910_board *pmic_plat_data;
 	struct tps65910_platform_data *init_data;
 	int ret = 0;
+	unsigned char buff;
 
 	pmic_plat_data = dev_get_platdata(&i2c->dev);
 	if (!pmic_plat_data)
@@ -161,26 +175,51 @@ static int tps65910_i2c_probe(struct i2c_client *i2c,
 	tps65910->write = tps65910_i2c_write;
 	mutex_init(&tps65910->io_mutex);
 
-	ret = mfd_add_devices(tps65910->dev, -1,
-			      tps65910s, ARRAY_SIZE(tps65910s),
-			      NULL, 0);
+	/* Check that the device is actually there */
+	ret = tps65910_i2c_read(tps65910, 0x80, 1, &buff);
+	if (ret < 0) {
+		dev_err(tps65910->dev, "could not be detected\n");
+		ret = -ENODEV;
+		goto err;
+	}
+
+	dev_info(tps65910->dev, "JTAGREVNUM 0x%x\n", buff);
+
+	if (buff & ~JTAGVERNUM_VERNUM_MASK) {
+		dev_err(tps65910->dev, "unknown version\n");
+		ret = -ENODEV;
+		goto err;
+	}
+
+#ifdef CONFIG_RTC_DRV_TPS65910
+	rtc_resources[0].start = TWL4030_IRQ_BASE + TPS65910_IRQ_RTC_ALARM;
+
+	/* Use external oscillator */
+	tps65910_clear_bits(tps65910, TPS65910_DEVCTRL, 0x20);
+	/* Clear RTC_PWDN bit */
+	tps65910_clear_bits(tps65910, TPS65910_DEVCTRL, 0x40);
+#else
+	/* Set RTC_PWDN bit */
+	tps65910_set_bits(tps65910, TPS65910_DEVCTRL, 0x40);
+#endif
+	ret = mfd_add_devices(tps65910->dev, -1, tps65910s,
+			ARRAY_SIZE(tps65910s), NULL, 0);
 	if (ret < 0)
 		goto err;
 
 	init_data->irq = pmic_plat_data->irq;
-	init_data->irq_base = pmic_plat_data->irq;
+	init_data->irq_base = TWL4030_IRQ_BASE;
+	tps65910->irq_base = TWL4030_IRQ_BASE;
+	tps65910->irq_num = TWL4030_BASE_NR_IRQS;
 
 	tps65910_gpio_init(tps65910, pmic_plat_data->gpio_base);
 
-	ret = tps65910_irq_init(tps65910, init_data->irq, init_data);
-	if (ret < 0)
-		goto err;
+	tps65910_irq_init(tps65910, init_data->irq, init_data);
 
 	kfree(init_data);
 	return ret;
 
 err:
-	mfd_remove_devices(tps65910->dev);
 	kfree(tps65910);
 	kfree(init_data);
 	return ret;

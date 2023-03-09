@@ -338,7 +338,7 @@ static int nand_verify_buf16(struct mtd_info *mtd, const uint8_t *buf, int len)
  */
 static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
 {
-	int page, chipnr, res = 0;
+	int page, chipnr, res = 0, i = 0;
 	struct nand_chip *chip = mtd->priv;
 	u16 bad;
 
@@ -356,23 +356,29 @@ static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
 		chip->select_chip(mtd, chipnr);
 	}
 
-	if (chip->options & NAND_BUSWIDTH_16) {
-		chip->cmdfunc(mtd, NAND_CMD_READOOB, chip->badblockpos & 0xFE,
-			      page);
-		bad = cpu_to_le16(chip->read_word(mtd));
-		if (chip->badblockpos & 0x1)
-			bad >>= 8;
-		else
-			bad &= 0xFF;
-	} else {
-		chip->cmdfunc(mtd, NAND_CMD_READOOB, chip->badblockpos, page);
-		bad = chip->read_byte(mtd);
-	}
+	do {
+		if (chip->options & NAND_BUSWIDTH_16) {
+			chip->cmdfunc(mtd, NAND_CMD_READOOB,
+					chip->badblockpos & 0xFE, page);
+			bad = cpu_to_le16(chip->read_word(mtd));
+			if (chip->badblockpos & 0x1)
+				bad >>= 8;
+			else
+				bad &= 0xFF;
+		} else {
+			chip->cmdfunc(mtd, NAND_CMD_READOOB, chip->badblockpos,
+					page);
+			bad = chip->read_byte(mtd);
+		}
 
-	if (likely(chip->badblockbits == 8))
-		res = bad != 0xFF;
-	else
-		res = hweight8(bad) < chip->badblockbits;
+		if (likely(chip->badblockbits == 8))
+			res = bad != 0xFF;
+		else
+			res = hweight8(bad) < chip->badblockbits;
+		ofs += mtd->writesize;
+		page = (int)(ofs >> chip->page_shift) & chip->pagemask;
+		i++;
+	} while (!res && i < 2 && (chip->bbt_options & NAND_BBT_SCAN2NDPAGE));
 
 	if (getchip)
 		nand_release_device(mtd);
@@ -578,17 +584,18 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 	}
 	chip->cmd_ctrl(mtd, NAND_CMD_NONE, NAND_NCE | NAND_CTRL_CHANGE);
 
-	/*
-	 * Program and erase have their own busy handlers status and sequential
-	 * in needs no delay
-	 */
+	/* Some commands need no delay */
 	switch (command) {
 
-	case NAND_CMD_PAGEPROG:
 	case NAND_CMD_ERASE1:
-	case NAND_CMD_ERASE2:
+		return;
+
 	case NAND_CMD_SEQIN:
+		ndelay(70);	/* need to wait tADL, but ready line not used */
+		return;
+
 	case NAND_CMD_STATUS:
+		ndelay(80);	/* need to wait tWHR, but ready line not used */
 		return;
 
 	case NAND_CMD_RESET:
@@ -611,7 +618,7 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 		 */
 		if (!chip->dev_ready) {
 			udelay(chip->chip_delay);
-			return;
+			goto afterready;
 		}
 	}
 	/*
@@ -621,6 +628,10 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 	ndelay(100);
 
 	nand_wait_ready(mtd);
+
+afterready:
+	if (command == NAND_CMD_READ0)
+		ndelay(20);	/* need to wait tRR after chip is ready */
 }
 
 /**
@@ -673,20 +684,21 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 	}
 	chip->cmd_ctrl(mtd, NAND_CMD_NONE, NAND_NCE | NAND_CTRL_CHANGE);
 
-	/*
-	 * Program and erase have their own busy handlers status, sequential
-	 * in, and deplete1 need no delay.
-	 */
 	switch (command) {
 
+	/* Some commands need no delay */
 	case NAND_CMD_CACHEDPROG:
-	case NAND_CMD_PAGEPROG:
 	case NAND_CMD_ERASE1:
-	case NAND_CMD_ERASE2:
-	case NAND_CMD_SEQIN:
 	case NAND_CMD_RNDIN:
-	case NAND_CMD_STATUS:
 	case NAND_CMD_DEPLETE1:
+		return;
+
+	case NAND_CMD_SEQIN:
+		ndelay(70);	/* need to wait tADL, but ready line not used */
+		return;
+
+	case NAND_CMD_STATUS:
+		ndelay(80);	/* need to wait tWHR, but ready line not used */
 		return;
 
 	case NAND_CMD_STATUS_ERROR:
@@ -716,6 +728,7 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 			       NAND_NCE | NAND_CLE | NAND_CTRL_CHANGE);
 		chip->cmd_ctrl(mtd, NAND_CMD_NONE,
 			       NAND_NCE | NAND_CTRL_CHANGE);
+		ndelay(80);	/* tWHR */
 		return;
 
 	case NAND_CMD_READ0:
@@ -723,6 +736,8 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 			       NAND_NCE | NAND_CLE | NAND_CTRL_CHANGE);
 		chip->cmd_ctrl(mtd, NAND_CMD_NONE,
 			       NAND_NCE | NAND_CTRL_CHANGE);
+
+		dmb();
 
 		/* This applies to read commands */
 	default:
@@ -732,7 +747,7 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 		 */
 		if (!chip->dev_ready) {
 			udelay(chip->chip_delay);
-			return;
+			goto afterready;
 		}
 	}
 
@@ -743,6 +758,10 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 	ndelay(100);
 
 	nand_wait_ready(mtd);
+
+afterready:
+	if (command == NAND_CMD_READ0)
+		ndelay(20);	/* need to wait tRR after chip is ready */
 }
 
 /**
@@ -1993,6 +2012,7 @@ static void nand_write_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 	const uint8_t *p = buf;
 	uint32_t *eccpos = chip->ecc.layout->eccpos;
 
+	memset(ecc_calc, 0, eccsteps * eccbytes);
 	for (i = 0; eccsteps; eccsteps--, i += eccbytes, p += eccsize) {
 		chip->ecc.hwctl(mtd, NAND_ECC_WRITE);
 		chip->write_buf(mtd, p, eccsize);
@@ -2898,7 +2918,8 @@ static int nand_flash_detect_onfi(struct mtd_info *mtd, struct nand_chip *chip,
 	mtd->writesize = le32_to_cpu(p->byte_per_page);
 	mtd->erasesize = le32_to_cpu(p->pages_per_block) * mtd->writesize;
 	mtd->oobsize = le16_to_cpu(p->spare_bytes_per_page);
-	chip->chipsize = (uint64_t)le32_to_cpu(p->blocks_per_lun) * mtd->erasesize;
+	chip->chipsize = le32_to_cpu(p->blocks_per_lun);
+	chip->chipsize *= (uint64_t)mtd->erasesize * p->lun_count;
 	*busw = 0;
 	if (le16_to_cpu(p->features) & 1)
 		*busw = NAND_BUSWIDTH_16;

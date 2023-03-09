@@ -1,0 +1,53 @@
+From e2d84c9e83fbad59062630152e370c96d7d3f1b4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 20 Nov 2013 08:42:26 +0100
+Subject: [PATCH 09/16] phyBOARD-WEGA-AM335x: Set spectrum for hdmi
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Enable SSC with a frequencs span of 0.2 MHz and a fm
+of 0.005. Added for EMC measurments.
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/board-pcm051.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 10edeb7..c3fdedb 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -53,6 +53,7 @@
+ #include "board-flash.h"
+ #include "mux.h"
+ #include "common.h"
++#include "cm33xx.h"
+ #include "am33xx_generic.h"
+ #include "am33xx_devices.h"
+ 
+@@ -303,6 +304,8 @@ static void __init peb_eval_01_init(void)
+ 
+ static void __init peb_av_01(void)
+ {
++	int val;
++
+ 	setup_pin_mux(lcdc_pin_mux);
+ 
+ 	if (conf_disp_pll(300000000)) {
+@@ -311,6 +314,12 @@ static void __init peb_av_01(void)
+ 		return;
+ 	}
+ 
++	writel(0x4b, AM33XX_CM_SSC_DELTAMSTEP_DPLL_DISP);
++	writel(0x44e, AM33XX_CM_SSC_MODFREQDIV_DPLL_DISP);
++	val = readl(AM33XX_CM_CLKMODE_DPLL_DISP);
++	val |= 0x1000;
++	writel(val, AM33XX_CM_CLKMODE_DPLL_DISP);
++
+ 	am33xx_register_lcdc(&lcdc_selection_pdata);
+ 
+ 	i2c_register_board_info(1, pcm051_peb_av_01_boardinfo, 1);
+-- 
+1.7.9.5
+
