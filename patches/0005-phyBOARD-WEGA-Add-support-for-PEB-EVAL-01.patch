@@ -1,0 +1,106 @@
+From a35067f0065edef27a1317b162ff68a38c0b40fc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Wed, 13 Nov 2013 12:55:16 +0100
+Subject: [PATCH 05/16] phyBOARD-WEGA: Add support for PEB-EVAL-01
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Setup the muxing for LED and buttons.
+UART0 is used as console output allready.
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/board-pcm051.c |   43 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index d520126..815ee72 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -20,11 +20,13 @@
+ #include <linux/kernel.h>
+ #include <linux/init.h>
+ #include <linux/module.h>
++#include <linux/leds.h>
+ #include <linux/gpio.h>
+ #include <linux/input.h>
+ #include <linux/i2c.h>
+ #include <linux/i2c/at24.h>
+ #include <linux/platform_device.h>
++#include <linux/leds.h>
+ #include <linux/clk.h>
+ #include <linux/err.h>
+ #include <linux/export.h>
+@@ -86,6 +88,18 @@ static struct pinmux_config d_can1_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++static struct pinmux_config led_pin_mux[] = {
++	{"mii1_txclk.gpio3_9", OMAP_MUX_MODE7 | AM33XX_PULL_ENBL},
++	{NULL, 0},
++};
++
++static struct pinmux_config btn_pin_mux[] = {
++	{"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
++	{"ecap0_in_pwm0_out.gpio0_7", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
++	{"mii1_rxclk.gpio3_10", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
++	{NULL, 0},
++};
++
+ static struct gpmc_timings am335x_nand_timings = {
+ 
+ 	/* granularity of 10 is sufficient because of calculations */
+@@ -132,6 +146,27 @@ static struct i2c_board_info __initdata pcm051_i2c_rtc_boardinfo[] = {
+ 	},
+ };
+ 
++static struct gpio_led gpio_leds[] = {
++	{
++		.name			= "peb_eval_01:green:led3",
++		.default_trigger	= "none",
++		.gpio			= 105,
++	},
++};
++
++static struct gpio_led_platform_data gpio_led_info = {
++	.leds		= gpio_leds,
++	.num_leds	= ARRAY_SIZE(gpio_leds),
++};
++
++static struct platform_device leds_gpio = {
++	.name	= "leds-gpio",
++	.id	= -1,
++	.dev	= {
++		.platform_data  = &gpio_led_info,
++	},
++};
++
+ static void pcm051_modul_init(void)
+ {
+ 	am335x_nand_init(&am335x_nand_timings);
+@@ -160,6 +195,13 @@ static void wega_board(void)
+ 
+ }
+ 
++static void __init peb_eval_01_init(void)
++{
++	setup_pin_mux(led_pin_mux);
++	setup_pin_mux(btn_pin_mux);
++	platform_device_register(&leds_gpio);
++}
++
+ static void __init pcm051_init(void)
+ {
+ 	am33xx_cpuidle_init();
+@@ -176,6 +218,7 @@ static void __init pcm051_init(void)
+ 
+ 	pcm051_modul_init();
+ 	wega_board();
++	peb_eval_01_init();
+ 
+ 	omap_register_i2c_bus(1, 100, NULL, 0);
+ 
+-- 
+1.7.9.5
+

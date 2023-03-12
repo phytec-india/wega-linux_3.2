@@ -19,12 +19,15 @@
 #define DAVINCI_MCASP_H
 
 #include <linux/io.h>
-#include <mach/asp.h>
+#include <asm/hardware/asp.h>
 #include "davinci-pcm.h"
 
 #define DAVINCI_MCASP_RATES	SNDRV_PCM_RATE_8000_96000
 #define DAVINCI_MCASP_I2S_DAI	0
 #define DAVINCI_MCASP_DIT_DAI	1
+
+#define DAVINCI_MCASP_CLKXDIV   0
+#define DAVINCI_MCASP_HCLKXDIV  1
 
 enum {
 	DAVINCI_AUDIO_WORD_8 = 0,
@@ -38,11 +41,13 @@ enum {
 
 struct davinci_audio_dev {
 	struct davinci_pcm_dma_params dma_params[2];
+	struct device *dev;
 	void __iomem *base;
 	int sample_rate;
 	struct clk *clk;
 	unsigned int codec_fmt;
 	u8 clk_active;
+	int dai_fmt;
 
 	/* McASP specific data */
 	int	tdm_slots;
@@ -54,6 +59,31 @@ struct davinci_audio_dev {
 	/* McASP FIFO related */
 	u8	txnumevt;
 	u8	rxnumevt;
+
+	/* backup related */
+	unsigned int *xrsrctl;
+	unsigned int pfunc;
+	unsigned int pdir;
+
+	unsigned int gblctlx;
+	unsigned int txmask;
+	unsigned int txfmt;
+	unsigned int txfmctl;
+	unsigned int aclkxctl;
+	unsigned int ahclkxctl;
+	unsigned int txtdm;
+	unsigned int wfifoctl;
+
+	unsigned int gblctlr;
+	unsigned int rxmask;
+	unsigned int rxfmt;
+	unsigned int rxfmctl;
+	unsigned int aclkrctl;
+	unsigned int ahclkrctl;
+	unsigned int rxtdm;
+	unsigned int rfifoctl;
+	int context_loss_cnt;
+
 };
 
 #endif	/* DAVINCI_MCASP_H */

@@ -1,0 +1,60 @@
+From ce5134d8ca1a6b7b26391b2dfadd31f8c49d5694 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Teresa=20G=C3=A1mez?= <t.gamez@phytec.de>
+Date: Tue, 12 Nov 2013 18:37:45 +0100
+Subject: [PATCH 04/16] phyBOARD-WEGA-AM335x: Add CAN support
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adding can1 support.
+can enable pin is not used.
+
+Signed-off-by: Teresa Gámez <t.gamez@phytec.de>
+---
+ arch/arm/mach-omap2/am33xx_devices.h |    3 +++
+ arch/arm/mach-omap2/board-pcm051.c   |   10 ++++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/arch/arm/mach-omap2/am33xx_devices.h b/arch/arm/mach-omap2/am33xx_devices.h
+index d87a071..78e2f95 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.h
++++ b/arch/arm/mach-omap2/am33xx_devices.h
+@@ -15,4 +15,7 @@ extern void am33xx_tps65910_init(int i2c_busnum, int gpio_irq);
+ extern void am33xx_rmii1_mii2_init(unsigned char *phy_id0,
+ 						unsigned char *phy_id1);
+ extern void am33xx_usb0_otg_usb1_host_init(void);
++
++extern void am33xx_d_can_init(unsigned int instance);
++
+ #endif
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index 0e52d0d..d520126 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -80,6 +80,12 @@ static struct pinmux_config usb_oc_pins_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++static struct pinmux_config d_can1_pin_mux[] = {
++	{"uart0_ctsn.d_can1_tx", OMAP_MUX_MODE2 | AM33XX_PULL_ENBL},
++	{"uart0_rtsn.d_can1_rx", OMAP_MUX_MODE2 | AM33XX_PIN_INPUT_PULLUP},
++	{NULL, 0},
++};
++
+ static struct gpmc_timings am335x_nand_timings = {
+ 
+ 	/* granularity of 10 is sufficient because of calculations */
+@@ -148,6 +154,10 @@ static void wega_board(void)
+ 
+ 	setup_pin_mux(usb_oc_pins_mux);
+ 	am33xx_usb0_otg_usb1_host_init();
++
++	setup_pin_mux(d_can1_pin_mux);
++	am33xx_d_can_init(1);
++
+ }
+ 
+ static void __init pcm051_init(void)
+-- 
+1.7.9.5
+

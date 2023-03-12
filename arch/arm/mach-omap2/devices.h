@@ -13,7 +13,19 @@
 #define __ARCH_ARM_MACH_OMAP_DEVICES_H
 
 struct isp_platform_data;
+struct snd_platform_data;
+struct mfd_tscadc_board;
+struct pwmss_platform_data;
 
 int omap3_init_camera(struct isp_platform_data *pdata);
+
+int __init am335x_register_mcasp(struct snd_platform_data *pdata, int ctrl_nr);
+extern int __init am33xx_register_mfd_tscadc(struct mfd_tscadc_board *pdata);
+extern int __init am33xx_register_ecap(int id,
+		struct pwmss_platform_data *pdata);
+extern int __init am33xx_register_ehrpwm(int id,
+		struct pwmss_platform_data *pdata);
+extern int __init omap_init_elm(void);
+extern void __init am33xx_gpu_init(void);
 
 #endif

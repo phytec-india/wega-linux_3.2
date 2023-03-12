@@ -1,0 +1,93 @@
+From aeb29b237662d86aefed3012c73fda2b0cf3cf2e Mon Sep 17 00:00:00 2001
+From: Subhendu Biswas <Subendu.b@phytec.in>
+Date: Mon, 24 Feb 2014 16:57:16 +0530
+Subject: [PATCH 14/16] phyBOARD-WEGA-AM335x-Add-backlight-support-for-ecap2
+
+Add LCD backlight support using ecap2.
+
+Signed-off-by: Subhendu Biswas <Subendu.b@phytec.in>
+---
+ arch/arm/mach-omap2/am33xx_devices.c |   31 +++++++++++++++++++++++++++++++
+ arch/arm/mach-omap2/am33xx_devices.h |    1 +
+ arch/arm/mach-omap2/board-pcm051.c   |    6 ++++++
+ 3 files changed, 38 insertions(+)
+
+diff --git a/arch/arm/mach-omap2/am33xx_devices.c b/arch/arm/mach-omap2/am33xx_devices.c
+index 2f684e0..62ab4c2 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.c
++++ b/arch/arm/mach-omap2/am33xx_devices.c
+@@ -27,6 +27,7 @@
+ #include <linux/spi/spi.h>
+ #include <linux/spi/flash.h>
+ #include <linux/pwm/pwm.h>
++#include <linux/pwm_backlight.h>
+ #include <plat/omap_device.h>
+ #include <plat/mmc.h>
+ #include <plat/nand.h>
+@@ -302,6 +303,36 @@ static struct tps65910_board am335x_tps65910_info = {
+ 	.tps65910_pmic_init_data[TPS65910_REG_VMMC]	= &am335x_dummy,
+ };
+ 
++static struct platform_pwm_backlight_data am335x_backlight_data_ecap2 = {
++	.pwm_id		= "ecap.2",
++	.ch		= -1,
++	.max_brightness = 100,
++	.dft_brightness = 100,
++	.pwm_period_ns	= 100000,
++};
++
++/* Setup pwm-backlight */
++static struct platform_device am335x_backlight_ecap2 = {
++	.name		= "pwm-backlight",
++	.id		= -1,
++	.dev		= {
++		.platform_data	= &am335x_backlight_data_ecap2,
++	}
++};
++
++static struct pwmss_platform_data pwm_pdata = {
++	.version = PWM_VERSION_1
++};
++
++int __init am33xx_ecap2_init(unsigned int dft_brightness)
++{
++	am33xx_register_ecap(2, &pwm_pdata);
++	am335x_backlight_data_ecap2.dft_brightness = dft_brightness;
++	platform_device_register(&am335x_backlight_ecap2);
++
++	return 0;
++}
++
+ static struct i2c_board_info __initdata am335x_tps65910_boardinfo[] = {
+ 	{
+ 		I2C_BOARD_INFO("tps65910", 0x2D),
+diff --git a/arch/arm/mach-omap2/am33xx_devices.h b/arch/arm/mach-omap2/am33xx_devices.h
+index 78e2f95..b3d6a6b 100644
+--- a/arch/arm/mach-omap2/am33xx_devices.h
++++ b/arch/arm/mach-omap2/am33xx_devices.h
+@@ -18,4 +18,5 @@ extern void am33xx_usb0_otg_usb1_host_init(void);
+ 
+ extern void am33xx_d_can_init(unsigned int instance);
+ 
++extern void am33xx_ecap2_init(unsigned int dft_brightness);
+ #endif
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index f8aa3b7..526d9cc 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -153,6 +153,12 @@ static struct pinmux_config lcdc_pin_mux[] = {
+ 	{NULL, 0},
+ };
+ 
++/* ecap2 pinmux */
++static struct pinmux_config ecap2_pin_mux[] = {
++	{"mcasp0_ahclkr.ecap2_in_pwm2_out", OMAP_MUX_MODE4 | AM33XX_PIN_OUTPUT},
++	{NULL, 0},
++};
++
+ static struct gpmc_timings am335x_nand_timings = {
+ 
+ 	/* granularity of 10 is sufficient because of calculations */
+-- 
+1.7.9.5
+

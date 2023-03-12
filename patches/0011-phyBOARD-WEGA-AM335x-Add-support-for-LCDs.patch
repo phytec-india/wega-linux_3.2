@@ -1,0 +1,94 @@
+From 9009f9264752a6da1623074516c0165094f261c3 Mon Sep 17 00:00:00 2001
+From: Subhendu Biswas <Subendu.b@phytec.in>
+Date: Fri, 21 Feb 2014 15:31:48 +0530
+Subject: [PATCH 11/16] phyBOARD-WEGA-AM335x-Add-support-for-LCDs
+
+Add support for 3.5, 4.3 and 7-inch LCD.
+
+Signed-off-by: Subhendu Biswas <Subendu.b@phytec.in>
+---
+ arch/arm/mach-omap2/board-pcm051.c |   14 +++++++++++-
+ drivers/video/da8xx-fb.c           |   42 ++++++++++++++++++++++++++++++++++++
+ 2 files changed, 55 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-omap2/board-pcm051.c b/arch/arm/mach-omap2/board-pcm051.c
+index df67ba0..88d3645 100644
+--- a/arch/arm/mach-omap2/board-pcm051.c
++++ b/arch/arm/mach-omap2/board-pcm051.c
+@@ -253,7 +253,19 @@ static struct da8xx_lcdc_platform_data lcdc_pdata[] = {
+ 		.manu_name		= "genericDVI",
+ 		.controller_data	= &lcd_cfg,
+ 		.type			= "DVI_720P",
+-	}
++	}, {
++		.manu_name		= "HTdisplay",
++		.controller_data	= &lcd_cfg,
++		.type			= "HT_HT800070I",
++	}, {
++		.manu_name		= "ZQdisplay",
++		.controller_data	= &lcd_cfg,
++		.type			= "ZQ_ZQ3506",
++	}, {
++		.manu_name		= "NEC Display model",
++		.controller_data	= &lcd_cfg,
++		.type			= "NL4827HC19",
++	},
+ };
+ 
+ static struct da8xx_lcdc_selection_platform_data lcdc_selection_pdata = {
+diff --git a/drivers/video/da8xx-fb.c b/drivers/video/da8xx-fb.c
+index 628e214..c12e034 100644
+--- a/drivers/video/da8xx-fb.c
++++ b/drivers/video/da8xx-fb.c
+@@ -387,6 +387,48 @@ static struct da8xx_panel known_lcd_panels[] = {
+ 		.pxl_clk = 75000000,
+ 		.invert_pxl_clk = 1,
+ 	},
++	/* HTdisplay HT800070i */
++	[10] = {
++		.name = "HT_HT800070I",
++		.width = 800,
++		.height = 480,
++		.hfp = 42,
++		.hbp = 86,
++		.hsw = 128,
++		.vfp = 10,
++		.vbp = 33,
++		.vsw = 2,
++		.pxl_clk = 32000000,
++		.invert_pxl_clk = 0,
++	},
++	/* display ZQ3506 */
++	[11] = {
++		.name = "ZQ_ZQ3506",
++		.width = 320,
++		.height = 240,
++		.hfp = 20,
++		.hbp = 68,
++		.hsw = 1,
++		.vfp = 4,
++		.vbp = 13,
++		.vsw = 0,
++		.pxl_clk = 4608000,
++		.invert_pxl_clk = 0,
++	},
++	/*NEC Display model NL4827HC19*/
++	[12] = {
++		.name = "NL4827HC19",
++		.width = 480,
++		.height = 272,
++		.hfp = 2,
++		.hbp = 3,
++		.hsw = 40,
++		.vfp = 1,
++		.vbp = 1,
++		.vsw = 1,
++		.pxl_clk = 8690000,
++		.invert_pxl_clk = 0,
++	},
+ };
+ 
+ /* Enable the Raster Engine of the LCD Controller */
+-- 
+1.7.9.5
+
