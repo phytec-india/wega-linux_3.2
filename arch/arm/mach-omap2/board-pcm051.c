@@ -73,34 +73,75 @@ static struct pinmux_config mmc0_cd_pin_mux[] = {
 static struct pinmux_config uart1_pin_mux[] = {
 	{"uart1_txd.uart1_txd", OMAP_MUX_MODE0 | AM33XX_PULL_ENBL},
 	{"uart1_rxd.uart1_rxd", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLUP},
-	{"uart1_ctsn.uart1_ctsn", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
-	{"uart1_rtsn.uart1_rtsn", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
 	{NULL, 0},
 };
 
-static struct pinmux_config usb_oc_pins_mux[] = {
-	{"mcasp0_aclkr.gpio3_18",	OMAP_MUX_MODE7 | AM33XX_PULL_ENBL |
-					AM33XX_PIN_INPUT_PULLUP},
-	{"mcasp0_fsr.gpio3_19",		OMAP_MUX_MODE7 | AM33XX_PULL_ENBL |
-					AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
+/* Module pin mux for uart0 */
+static struct pinmux_config uart0_pin_mux[] = {
+        {"uart0_txd.uart0_txd", OMAP_MUX_MODE0 | AM33XX_PULL_ENBL},
+        {"uart0_rxd.uart0_rxd", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLUP},
+        {NULL, 0},
 };
 
-static struct pinmux_config d_can1_pin_mux[] = {
-	{"uart0_ctsn.d_can1_tx", OMAP_MUX_MODE2 | AM33XX_PULL_ENBL},
-	{"uart0_rtsn.d_can1_rx", OMAP_MUX_MODE2 | AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
+/* Module pin mux for uart2 */
+static struct pinmux_config uart2_pin_mux[] = {
+       {"mii1_txclk.uart2_rxd_mux0", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLUP},
+       {"mii1_rxclk.uart2_txd_mux0", OMAP_MUX_MODE1 | AM33XX_PULL_ENBL},
+       {NULL, 0},
 };
 
-static struct pinmux_config led_pin_mux[] = {
-	{"mii1_txclk.gpio3_9", OMAP_MUX_MODE7 | AM33XX_PULL_ENBL},
-	{NULL, 0},
+/* Module pin mux for uart3 */
+static struct pinmux_config uart3_pin_mux[] = {
+        {"mii1_rxd2.uart3_txd_mux0", OMAP_MUX_MODE1 | AM33XX_PULL_ENBL},
+        {"mii1_rxd3.uart3_rxd_mux0", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLUP},
+        {NULL, 0},
+ };
+
+/* Module pin mux for uart4 */
+static struct pinmux_config uart4_pin_mux[] = {
+        {"mii1_txd2.uart4_txd_mux0", OMAP_MUX_MODE1 | AM33XX_PULL_ENBL},
+        {"mii1_txd3.uart4_rxd_mux0", OMAP_MUX_MODE1 | AM33XX_PIN_INPUT_PULLUP},
+        {NULL, 0},
+ };
+
+/* Module pin mux for uart5 */
+static struct pinmux_config uart5_pin_mux[] = {
+       {"mii1_col.uart5_rxd_mux0", OMAP_MUX_MODE3 | AM33XX_PIN_INPUT_PULLUP},
+       {"mii1_rxdv.uart5_txd_mux1", OMAP_MUX_MODE3 | AM33XX_PULL_ENBL},
+       {NULL, 0},
+};
+
+/* Module Pinmux for GPIO's */
+
+static struct pinmux_config gpio_pin_mux[] = {
+        {"gpmc_a0.gpio1_16", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a6.gpio1_22", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a2.gpio1_18", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a3.gpio1_19", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a4.gpio1_20", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a5.gpio1_21", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a1.gpio1_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a7.gpio1_23", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a8.gpio1_24", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a9.gpio1_25", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a10.gpio1_26", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_a11.gpio1_27", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_ben1.gpio1_28", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	{"mcasp0_aclkr.gpio3_18",  OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	{"mcasp0_fsr.gpio3_19", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},  // Always High 3.3V
+        {"gpmc_csn1.gpio1_30", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_wpn.gpio0_31", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_csn3.gpio2_0", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"gpmc_csn2.gpio1_31", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	{"uart1_ctsn.gpio0_12", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {"uart1_rtsn.gpio0_13", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	{"mcasp0_ahclkr.gpio3_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+        {NULL, 0},
 };
 
 static struct pinmux_config btn_pin_mux[] = {
-	{"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
 	{"ecap0_in_pwm0_out.gpio0_7", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
-	{"mii1_rxclk.gpio3_10", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
 	{NULL, 0},
 };
 
@@ -153,12 +194,6 @@ static struct pinmux_config lcdc_pin_mux[] = {
 	{NULL, 0},
 };
 
-/* ecap2 pinmux */
-static struct pinmux_config ecap2_pin_mux[] = {
-	{"mcasp0_ahclkr.ecap2_in_pwm2_out", OMAP_MUX_MODE4 | AM33XX_PIN_OUTPUT},
-	{NULL, 0},
-};
-
 /* Module pin mux for mcasp0 */
 static struct pinmux_config mcasp0_pin_mux[] = {
 	{"mcasp0_aclkx.mcasp0_aclkx", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
@@ -166,6 +201,12 @@ static struct pinmux_config mcasp0_pin_mux[] = {
 	{"mcasp0_axr0.mcasp0_axr0", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLDOWN},
 	{"mcasp0_axr1.mcasp0_axr1", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
 	{"mcasp0_ahclkx.mcasp0_ahclkx", OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
+	{NULL, 0},
+};
+
+static struct pinmux_config d_can1_pin_mux[] = {
+	{"uart0_ctsn.d_can1_tx", OMAP_MUX_MODE2 | AM33XX_PULL_ENBL},
+	{"uart0_rtsn.d_can1_rx", OMAP_MUX_MODE2 | AM33XX_PIN_INPUT_PULLUP},
 	{NULL, 0},
 };
 
@@ -277,22 +318,6 @@ static struct da8xx_lcdc_platform_data lcdc_pdata[] = {
 		.manu_name		= "genericDVI",
 		.controller_data	= &lcd_cfg,
 		.type			= "DVI_XGA",
-	}, {
-		.manu_name		= "genericDVI",
-		.controller_data	= &lcd_cfg,
-		.type			= "DVI_720P",
-	}, {
-		.manu_name		= "HTdisplay",
-		.controller_data	= &lcd_cfg,
-		.type			= "HT_HT800070I",
-	}, {
-		.manu_name		= "ZQdisplay",
-		.controller_data	= &lcd_cfg,
-		.type			= "ZQ_ZQ3506",
-	}, {
-		.manu_name		= "NECdisplay",
-		.controller_data	= &lcd_cfg,
-		.type			= "NL4827HC19",
 	},
 };
 
@@ -355,14 +380,18 @@ static void pcm051_modul_init(void)
 
 static void wega_board(void)
 {
+	setup_pin_mux(uart0_pin_mux);
 	setup_pin_mux(uart1_pin_mux);
-
+	setup_pin_mux(uart2_pin_mux);
+	setup_pin_mux(uart3_pin_mux);
+	setup_pin_mux(uart4_pin_mux);
+	setup_pin_mux(uart5_pin_mux);
+	setup_pin_mux(gpio_pin_mux);
 	setup_pin_mux(mmc0_cd_pin_mux);
 	am335x_mmc0_init(GPIO_TO_PIN(0, 6), -1);
 
 	am33xx_rmii1_mii2_init("0:00", "0:01");
 
-	setup_pin_mux(usb_oc_pins_mux);
 	am33xx_usb0_otg_usb1_host_init();
 
 	setup_pin_mux(d_can1_pin_mux);
@@ -373,7 +402,6 @@ static void wega_board(void)
 
 static void __init peb_eval_01_init(void)
 {
-	setup_pin_mux(led_pin_mux);
 	setup_pin_mux(btn_pin_mux);
 	platform_device_register(&leds_gpio);
 }
@@ -399,12 +427,6 @@ static void __init peb_av_01(void)
 	am33xx_register_lcdc(&lcdc_selection_pdata);
 
 	i2c_register_board_info(1, pcm051_peb_av_01_boardinfo, 1);
-}
-static void __init backlight_init(void)
-{
-	setup_pin_mux(ecap2_pin_mux);
-
-	am33xx_ecap2_init(0);
 }
 
 /* Setup McASP 0 (Multichannel Audio Serial Port) */
@@ -434,7 +456,6 @@ static void __init pcm051_init(void)
 	wega_board();
 	peb_eval_01_init();
 	peb_av_01();
-	backlight_init();
 
 	omap_register_i2c_bus(1, 100, NULL, 0);
 	mcasp0_init(0, 0);
